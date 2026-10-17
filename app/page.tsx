@@ -1,1021 +1,1203 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { fetchWithAuth, API_BASE_URL } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
 import {
-  getUserActiveRoadmap,
+  getUserRoadmaps,
   saveRoadmapToSupabase,
-  saveDayTopicsToSupabase,
-  getOrSaveLessonFromSupabase,
-  logAgentExecution,
-  getDomainTopicsForDay,
-  generateDomainDays,
+  deleteRoadmap,
+  RoadmapSummary,
 } from "@/lib/supabase-roadmap";
-import AntigravityCard from "@/components/AntigravityCard";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Progress } from "@/components/ui/progress";
+import {
+  ArrowRight,
+  ArrowUpRight,
+  Check,
+  Loader2,
+  Trash2,
+  Plus,
+  Terminal,
+  Sparkles,
+} from "@/components/ui/icons";
+import {
+  ShinyText,
+  TrueFocus,
+  AnimatedCounter,
+  SpotlightCard,
+  TiltedCard,
+  StarBorder,
+  ClickSpark,
+  Magnet,
+  ThreadsBackground,
+} from "@/components/react-bits";
+import { VelocityMarquee } from "@/components/velocity-marquee";
+import { HorizontalAgentShowcase } from "@/components/horizontal-agent-showcase";
+import { StickyProductStack } from "@/components/sticky-product-stack";
+import { ConsensysOffsetCta } from "@/components/consensys-offset-cta";
+import { CustomDropdown } from "@/components/ui/custom-dropdown";
+import { showTelemetryToast } from "@/components/ui/telemetry-toast";
+import { TelemetryConfirmDialog } from "@/components/ui/telemetry-confirm-dialog";
+import { usePageTransition } from "@/components/page-transition";
+import { useLenis } from "@/components/smooth-scroll";
 
-interface Topic {
-  id: string;
-  topic_number: number;
-  title: string;
-  description: string;
-  estimated_minutes: number;
-  status: "not_started" | "in_progress" | "completed";
-}
-
-interface DayNode {
-  id: string;
-  day_number: number;
-  title: string;
-  description: string;
-  learning_objectives: string[];
-  status: "not_started" | "in_progress" | "completed";
-  topics: Topic[];
-}
-
-interface LessonData {
-  topic_id: string;
-  content_markdown: string;
-  practical_examples: Array<{ language?: string; title: string; code: string }>;
-  citations: Array<{ title: string; url?: string; source_type: string; snippet?: string }>;
-  recommended_courses: Array<{ title: string; platform: string; url?: string; level: string }>;
-}
-
-export default function Home() {
+export default function LandingPage() {
   const router = useRouter();
+  const { transitionTo } = usePageTransition();
+  const lenis = useLenis();
   const supabase = createClient();
   const [currentUser, setCurrentUser] = useState<any>(null);
 
-  // 1. Core Input Variables
-  const [domain, setDomain] = useState("Distributed Systems & Consensus Engines");
-  const [totalDays, setTotalDays] = useState(7);
-  const [dailyHours, setDailyHours] = useState(2.0);
-  const [navigationMode, setNavigationMode] = useState<"sequential" | "nonlinear">("nonlinear");
+  // Roadmaps state
+  const [roadmaps, setRoadmaps] = useState<RoadmapSummary[]>([]);
+  const [isLoadingRoadmaps, setIsLoadingRoadmaps] = useState(true);
+  const [activeTab, setActiveTab] = useState<"on-track" | "off-track">("on-track");
 
-  // Active state
-  const [roadmapId, setRoadmapId] = useState<string | null>(null);
-  const [roadmapDays, setRoadmapDays] = useState<DayNode[]>([]);
-  const [selectedDayId, setSelectedDayId] = useState<string | null>(null);
-  const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
-  const [currentLesson, setCurrentLesson] = useState<LessonData | null>(null);
+  // Trajectory Architect Modal state
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [domainInput, setDomainInput] = useState("Distributed Systems & Consensus Engines");
+  const [totalDaysInput, setTotalDaysInput] = useState(14);
+  const [dailyHoursInput, setDailyHoursInput] = useState(2.5);
+  const [skillLevelInput, setSkillLevelInput] = useState<"beginner" | "intermediate" | "advanced">("intermediate");
+  const [isGenerating, setIsGenerating] = useState(false);
 
-  // Loading flags
-  const [isGeneratingRoadmap, setIsGeneratingRoadmap] = useState(false);
-  const [isLoadingTopics, setIsLoadingTopics] = useState(false);
-  const [isLoadingLesson, setIsLoadingLesson] = useState(false);
-  const [activeTab, setActiveTab] = useState<"lesson" | "code" | "citations" | "courses">("lesson");
-  const [copiedCodeIndex, setCopiedCodeIndex] = useState<number | null>(null);
-  const loadedUserRef = useRef<string | null>(null);
-  const inFlightLessonRef = useRef<{ [key: string]: boolean }>({});
+  // Custom Deletion Confirmation Dialog State
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [roadmapToDelete, setRoadmapToDelete] = useState<RoadmapSummary | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Auth & Initial starter tree (guarded to prevent duplicate requests)
+  // 1. Initial user & roadmaps load
   useEffect(() => {
     let isMounted = true;
 
-    async function initUserAndData() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!isMounted) return;
-      setCurrentUser(user);
+    async function loadData() {
+      setIsLoadingRoadmaps(true);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!isMounted) return;
+        setCurrentUser(user);
 
-      if (user) {
-        if (loadedUserRef.current !== user.id) {
-          loadedUserRef.current = user.id;
-          await loadUserRoadmap(user.id);
-        }
-      } else {
-        if (!loadedUserRef.current) {
-          loadedUserRef.current = "guest";
-          loadGuestRoadmap();
-        }
+        const loaded = await getUserRoadmaps(user ? user.id : "guest");
+        if (!isMounted) return;
+        setRoadmaps(loaded);
+      } catch (err) {
+        console.warn("Notice loading user roadmaps:", err);
+      } finally {
+        if (isMounted) setIsLoadingRoadmaps(false);
       }
     }
 
-    initUserAndData();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      const user = session?.user || null;
-      setCurrentUser(user);
-      if (user) {
-        if (loadedUserRef.current !== user.id) {
-          loadedUserRef.current = user.id;
-          await loadUserRoadmap(user.id);
-        }
-      } else if (event === "SIGNED_OUT") {
-        loadedUserRef.current = "guest";
-        loadGuestRoadmap();
-      }
-    });
-
-    return () => {
-      isMounted = false;
-      subscription.unsubscribe();
-    };
+    loadData();
+    return () => { isMounted = false; };
   }, []);
 
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    setCurrentUser(null);
-    loadGuestRoadmap();
-    router.refresh();
-  };
-
-  // Load existing active roadmap for authenticated user or auto-create first one
-  const loadUserRoadmap = async (userId: string) => {
-    setIsGeneratingRoadmap(true);
-    try {
-      const activeData = await getUserActiveRoadmap(userId);
-      if (activeData && activeData.roadmap && activeData.days && activeData.days.length > 0) {
-        setRoadmapId(activeData.roadmap.id);
-        setDomain(activeData.roadmap.domain_context || domain);
-        setTotalDays(activeData.roadmap.total_days || totalDays);
-        setDailyHours(activeData.roadmap.daily_hours_commitment || dailyHours);
-        setRoadmapDays(activeData.days);
-
-        const firstDay = activeData.days[0];
-        setSelectedDayId(firstDay.id);
-
-        if (firstDay.topics && firstDay.topics.length > 0) {
-          const firstTopic = firstDay.topics[0];
-          setSelectedTopicId(firstTopic.id);
-          await handleFetchLesson(firstTopic.id, firstTopic.title);
-        } else {
-          await handleFetchDayTopics(activeData.roadmap.id, firstDay.id);
-        }
-        return;
-      }
-
-      // No active roadmap found in Supabase for this user, generate and persist their first one!
-      const created = await saveRoadmapToSupabase(userId, domain, totalDays, dailyHours);
-      setRoadmapId(created.roadmap.id);
-      setRoadmapDays(created.days);
-      if (created.days.length > 0) {
-        const firstDay = created.days[0];
-        setSelectedDayId(firstDay.id);
-        if (firstDay.topics.length > 0) {
-          const firstTopic = firstDay.topics[0];
-          setSelectedTopicId(firstTopic.id);
-          await handleFetchLesson(firstTopic.id, firstTopic.title);
-        }
-      }
-    } catch (err) {
-      console.error("Error loading user roadmap from Supabase:", err);
-      loadGuestRoadmap();
-    } finally {
-      setIsGeneratingRoadmap(false);
-    }
-  };
-
-  const loadGuestRoadmap = () => {
-    setRoadmapId(null);
-    const domainDays = generateDomainDays(domain, totalDays);
-
-    const localDays: DayNode[] = domainDays.map((d) => {
-      const dayNum = d.day_number;
-      const domainTopics = getDomainTopicsForDay(domain, dailyHours, dayNum, d.title);
-      const topics: Topic[] = domainTopics.map((t) => ({
-        id: `guest-top-${dayNum}-${t.topic_number}`,
-        topic_number: t.topic_number,
-        title: t.title,
-        description: t.description,
-        estimated_minutes: t.estimated_minutes,
-        status: (dayNum === 1 && t.topic_number === 1 ? "in_progress" : "not_started") as "in_progress" | "not_started",
-      }));
-
-      return {
-        id: `guest-day-${dayNum}`,
-        day_number: dayNum,
-        title: d.title,
-        description: d.description,
-        learning_objectives: d.learning_objectives,
-        status: (dayNum === 1 ? "in_progress" : "not_started") as "in_progress" | "not_started",
-        topics,
-      };
-    });
-
-    setRoadmapDays(localDays);
-    setSelectedDayId(localDays[0].id);
-    setSelectedTopicId(localDays[0].topics[0].id);
-    loadMockLesson(localDays[0].topics[0].title);
-  };
-
-  // Trigger Agent 1: Roadmap Structure Agent
-  const handleGenerateRoadmap = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    setIsGeneratingRoadmap(true);
-
-    try {
-      // 1. Try FastAPI backend if active
-      try {
-        const res = await fetchWithAuth("/roadmap/generate", {
-          method: "POST",
-          body: JSON.stringify({
-            domain_context: domain,
-            total_days: totalDays,
-            daily_hours: dailyHours,
-            skill_level: "intermediate",
-          }),
-        });
-
-        if (res && res.roadmap && res.days) {
-          setRoadmapId(res.roadmap.id);
-          const mappedDays: DayNode[] = res.days.map((d: any) => ({
-            id: d.id,
-            day_number: d.day_number,
-            title: d.title,
-            description: d.description,
-            learning_objectives: d.learning_objectives || [],
-            status: d.status || "not_started",
-            topics: (d.topics || []).map((t: any) => ({
-              id: t.id,
-              topic_number: t.topic_number,
-              title: t.title,
-              description: t.description,
-              estimated_minutes: t.estimated_minutes,
-              status: t.status || "not_started",
-            })),
-          }));
-          setRoadmapDays(mappedDays);
-          setIsGeneratingRoadmap(false);
-
-          if (mappedDays.length > 0) {
-            const firstDay = mappedDays[0];
-            setSelectedDayId(firstDay.id);
-            if (firstDay.topics && firstDay.topics.length > 0) {
-              const firstTopic = firstDay.topics[0];
-              setSelectedTopicId(firstTopic.id);
-              handleFetchLesson(firstTopic.id, firstTopic.title);
+  // Handle direct hash navigation e.g. /#portfolio or incoming navigation from another route
+  useEffect(() => {
+    const handleHashScroll = () => {
+      if (typeof window !== "undefined" && window.location.hash === "#portfolio") {
+        setTimeout(() => {
+          const el = document.getElementById("portfolio");
+          if (el) {
+            if (lenis) {
+              lenis.scrollTo(el, { offset: -60, duration: 1.2 });
             } else {
-              handleFetchDayTopics(res.roadmap.id, firstDay.id);
+              el.scrollIntoView({ behavior: "smooth" });
             }
           }
-          return;
-        }
-      } catch (backendErr) {
-        console.warn("Backend API offline or unreachable, writing directly to Supabase:", backendErr);
+        }, 150);
       }
+    };
 
-      // 2. Direct Supabase generation and persistence if authenticated
-      if (currentUser?.id) {
-        const created = await saveRoadmapToSupabase(
-          currentUser.id,
-          domain,
-          totalDays,
-          dailyHours
-        );
-        setRoadmapId(created.roadmap.id);
-        setRoadmapDays(created.days);
+    handleHashScroll();
+    window.addEventListener("hashchange", handleHashScroll);
+    return () => window.removeEventListener("hashchange", handleHashScroll);
+  }, [lenis]);
 
-        if (created.days.length > 0) {
-          const firstDay = created.days[0];
-          setSelectedDayId(firstDay.id);
-          if (firstDay.topics.length > 0) {
-            const firstTopic = firstDay.topics[0];
-            setSelectedTopicId(firstTopic.id);
-            await handleFetchLesson(firstTopic.id, firstTopic.title);
-          }
-        }
-        return;
+  // Listen for navbar Deploy button click
+  useEffect(() => {
+    const handleOpenModal = () => {
+      if (!currentUser) {
+        transitionTo("/login?redirectedFrom=" + encodeURIComponent("/"));
+      } else {
+        setIsModalOpen(true);
       }
+    };
+    window.addEventListener("open-deploy-modal", handleOpenModal);
+    return () => window.removeEventListener("open-deploy-modal", handleOpenModal);
+  }, [currentUser, transitionTo]);
 
-      // 3. Fallback guest simulation
-      loadGuestRoadmap();
-    } catch (err) {
-      console.error("Error generating roadmap:", err);
-      loadGuestRoadmap();
+  // Handle roadmap creation
+  const handleDeployTrajectory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) {
+      setIsModalOpen(false);
+      showTelemetryToast({
+        type: "warning",
+        title: "AUTHENTICATION REQUIRED",
+        message: "Please sign in to deploy and persist autonomous trajectories.",
+      });
+      transitionTo("/login?redirectedFrom=" + encodeURIComponent("/"));
+      return;
+    }
+    if (!domainInput.trim()) return;
+
+    setIsGenerating(true);
+    showTelemetryToast({
+      type: "info",
+      title: "SYNTHESIS INITIALIZED",
+      message: `Deploying 3-agent pipeline for "${domainInput.trim()}"...`,
+    });
+
+    try {
+      const result = await saveRoadmapToSupabase(
+        currentUser.id,
+        domainInput.trim(),
+        totalDaysInput,
+        dailyHoursInput,
+        skillLevelInput
+      );
+      setIsModalOpen(false);
+      showTelemetryToast({
+        type: "success",
+        title: "TRAJECTORY DEPLOYED",
+        message: "Deterministic DAG successfully compiled. Entering cockpit...",
+      });
+      transitionTo(`/workspace?id=${result.roadmap.id}`);
+    } catch (err: any) {
+      console.error("Trajectory creation failed:", err);
+      showTelemetryToast({
+        type: "error",
+        title: "SYNTHESIS FAILED",
+        message: err.message || "Failed to compile curriculum trajectory.",
+      });
     } finally {
-      setIsGeneratingRoadmap(false);
+      setIsGenerating(false);
     }
   };
 
-  // Trigger Agent 2: Daily Structure Agent
-  const handleFetchDayTopics = async (rId: string, dId: string) => {
-    setIsLoadingTopics(true);
+  // Open custom confirmation modal for roadmap delete
+  const requestDeleteRoadmap = (roadmap: RoadmapSummary, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRoadmapToDelete(roadmap);
+    setConfirmDialogOpen(true);
+  };
+
+  // Execute confirmed roadmap delete
+  const handleConfirmDelete = async () => {
+    if (!roadmapToDelete) return;
+    const id = roadmapToDelete.id;
+    const title = roadmapToDelete.title;
+    setDeletingId(id);
+
     try {
-      // 1. Try FastAPI backend if active
-      try {
-        const topicsRes = await fetchWithAuth(`/roadmap/${rId}/day/${dId}/structure`, {
-          method: "POST",
+      const success = await deleteRoadmap(id);
+      if (success) {
+        setRoadmaps((prev) => prev.filter((r) => r.id !== id));
+        showTelemetryToast({
+          type: "success",
+          title: "TRAJECTORY PURGED",
+          message: `Curriculum "${title}" purged from Supabase cloud.`,
         });
-
-        if (Array.isArray(topicsRes) && topicsRes.length > 0) {
-          setRoadmapDays((prev) =>
-            prev.map((d) =>
-              d.id === dId
-                ? {
-                    ...d,
-                    topics: topicsRes.map((t: any) => ({
-                      id: t.id,
-                      topic_number: t.topic_number,
-                      title: t.title,
-                      description: t.description,
-                      estimated_minutes: t.estimated_minutes,
-                      status: t.status || "not_started",
-                    })),
-                  }
-                : d
-            )
-          );
-          setSelectedTopicId(topicsRes[0].id);
-          await handleFetchLesson(topicsRes[0].id, topicsRes[0].title);
-          return;
-        }
-      } catch (backendErr) {
-        console.warn("Agent 2 backend offline, persisting topics in Supabase:", backendErr);
-      }
-
-      // 2. Direct Supabase topics persistence
-      if (rId && dId && !dId.startsWith("guest-")) {
-        const currentDay = roadmapDays.find((d) => d.id === dId);
-        const topics = await saveDayTopicsToSupabase(
-          dId,
-          rId,
-          dailyHours,
-          domain,
-          currentDay?.day_number || 1,
-          currentDay?.title || ""
-        );
-        if (topics && topics.length > 0) {
-          setRoadmapDays((prev) =>
-            prev.map((d) =>
-              d.id === dId
-                ? {
-                    ...d,
-                    topics: topics.map((t) => ({
-                      id: t.id,
-                      topic_number: t.topic_number,
-                      title: t.title,
-                      description: t.description,
-                      estimated_minutes: t.estimated_minutes,
-                      status: t.status,
-                    })),
-                  }
-                : d
-            )
-          );
-          setSelectedTopicId(topics[0].id);
-          await handleFetchLesson(topics[0].id, topics[0].title);
-
-          if (currentUser?.id) {
-            await logAgentExecution(currentUser.id, "Agent 2: Daily Structure", 250, 480, 290);
-          }
-        }
-      }
-    } catch (err) {
-      console.warn("Agent 2 fetch error:", err);
-    } finally {
-      setIsLoadingTopics(false);
-    }
-  };
-
-  // Trigger Agent 3: Daily Teacher Agent
-  const handleFetchLesson = async (tId: string, topicTitle?: string) => {
-    if (!tId || inFlightLessonRef.current[tId]) return;
-    inFlightLessonRef.current[tId] = true;
-    setIsLoadingLesson(true);
-    try {
-      // 1. Try FastAPI backend if active
-      try {
-        const lessonRes = await fetchWithAuth(`/roadmap/topic/${tId}/teach`, {
-          method: "POST",
+      } else {
+        showTelemetryToast({
+          type: "error",
+          title: "PURGE FAILED",
+          message: "Unable to delete trajectory from database.",
         });
-        if (lessonRes && lessonRes.content_markdown) {
-          setCurrentLesson(lessonRes);
-          return;
-        }
-      } catch (backendErr) {
-        console.warn("Agent 3 backend offline, persisting lesson in Supabase:", backendErr);
       }
-
-      // 2. Direct Supabase lesson retrieval / persistence
-      if (tId && !tId.startsWith("guest-") && tId !== "mock") {
-        const resolvedTitle = topicTitle || selectedTopic?.title || "Applied Architecture & Invariants";
-        const lesson = await getOrSaveLessonFromSupabase(
-          tId,
-          resolvedTitle,
-          domain,
-          selectedTopic?.description || ""
-        );
-        if (lesson && lesson.content_markdown) {
-          setCurrentLesson(lesson);
-          if (currentUser?.id) {
-            await logAgentExecution(currentUser.id, "Agent 3: Daily Teacher", 450, 1200, 680);
-          }
-          return;
-        }
-      }
-
-      // 3. Fallback mock lesson
-      await loadMockLesson(topicTitle || selectedTopic?.title || "Selected Topic");
-    } catch (err) {
-      console.warn("Agent 3 fetch error:", err);
-      await loadMockLesson(topicTitle || selectedTopic?.title || "Selected Topic");
+    } catch (err: any) {
+      showTelemetryToast({
+        type: "error",
+        title: "PURGE ERROR",
+        message: err.message || "Database deletion failed.",
+      });
     } finally {
-      delete inFlightLessonRef.current[tId];
-      setIsLoadingLesson(false);
+      setDeletingId(null);
+      setConfirmDialogOpen(false);
+      setRoadmapToDelete(null);
     }
   };
 
-  const loadMockLesson = async (title: string) => {
-    try {
-      const lesson = await getOrSaveLessonFromSupabase("mock", title, domain, selectedTopic?.description);
-      setCurrentLesson(lesson);
-    } catch (e) {
-      console.warn("Error loading lesson:", e);
+  // Pre-fill modal with conviction tracks
+  const handleQuickLaunch = (domain: string, days: number, hours: number) => {
+    if (!currentUser) {
+      transitionTo("/login?redirectedFrom=" + encodeURIComponent("/"));
+      return;
     }
+    setDomainInput(domain);
+    setTotalDaysInput(days);
+    setDailyHoursInput(hours);
+    setIsModalOpen(true);
   };
 
-  const copyCode = (code: string, index: number) => {
-    navigator.clipboard.writeText(code);
-    setCopiedCodeIndex(index);
-    setTimeout(() => setCopiedCodeIndex(null), 2000);
-  };
-
-  const selectedDay = roadmapDays.find((d) => d.id === selectedDayId) || roadmapDays[0];
-  const selectedTopic =
-    selectedDay?.topics?.find((t) => t.id === selectedTopicId) || selectedDay?.topics?.[0];
+  // Aggregated Stats
+  const totalDaysSum = roadmaps.reduce((acc, r) => acc + (r.total_days || 0), 0);
+  const avgHours =
+    roadmaps.length > 0
+      ? (
+          roadmaps.reduce((acc, r) => acc + (r.daily_hours_commitment || 2), 0) /
+          roadmaps.length
+        ).toFixed(1)
+      : "2.0";
 
   return (
-    <div className="min-h-screen bg-[#06070a] text-zinc-100 font-sans selection:bg-indigo-500 selection:text-white relative overflow-hidden bg-dot-grid">
-      {/* Antigravity Ambient Atmospheric Lighting */}
-      <div className="pointer-events-none fixed -top-40 -left-40 w-[600px] h-[600px] bg-indigo-600/15 rounded-full blur-[140px] animate-pulse-glow" />
-      <div className="pointer-events-none fixed top-1/3 -right-40 w-[550px] h-[550px] bg-cyan-500/12 rounded-full blur-[150px] animate-pulse-glow" style={{ animationDelay: "2s" }} />
-      <div className="pointer-events-none fixed -bottom-40 left-1/3 w-[650px] h-[650px] bg-purple-600/10 rounded-full blur-[160px]" />
+    <ClickSpark
+      sparkColor="#f97316"
+      sparkCount={12}
+      sparkRadius={36}
+      duration={400}
+      className="min-h-screen bg-background text-foreground font-sans relative overflow-x-hidden selection:bg-[#d4f934] selection:text-[#08090b] transition-colors duration-200"
+    >
+      {/* Subtle Atmospheric Diffused Lighting Pools (Subdued & Clean) */}
+      <div className="pointer-events-none fixed -top-40 left-1/2 -translate-x-1/2 w-[850px] h-[500px] bg-gradient-to-b from-orange-500/8 via-transparent to-transparent blur-[160px] rounded-full z-0 opacity-60 dark:opacity-80" />
+      <div className="pointer-events-none fixed top-1/3 -left-48 w-[450px] h-[450px] bg-white/[0.02] blur-[160px] rounded-full z-0 opacity-40 dark:opacity-60" />
+      <div className="pointer-events-none fixed top-2/3 -right-48 w-[500px] h-[500px] bg-orange-500/5 blur-[160px] rounded-full z-0 opacity-40 dark:opacity-60" />
 
-      {/* Top Navbar */}
-      <header className="border-b border-white/[0.08] sticky top-0 z-50 bg-[#06070a]/75 backdrop-blur-2xl">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3.5">
-            <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-indigo-500 via-indigo-600 to-cyan-400 flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-500/30 border border-white/20 animate-float-subtle">
-              R
-            </div>
-            <div className="flex items-baseline gap-1.5">
-              <span className="font-extrabold text-xl tracking-tight text-white drop-shadow-sm">Roadmap</span>
-              <span className="text-xs font-mono font-bold text-indigo-400">.ai</span>
-            </div>
-            <span className="ml-2 text-[10px] uppercase font-mono tracking-widest px-2.5 py-0.5 rounded-full glass-pill text-indigo-300 border border-indigo-400/20 shadow-inner">
-              Spatial 3-Agent
-            </span>
-          </div>
+      {/* Cybernetic Dot Grid Background */}
+      <div className="pointer-events-none fixed inset-0 bg-dot-grid opacity-25 dark:opacity-20 z-0" />
 
-          <div className="hidden md:flex items-center gap-8 text-sm text-zinc-400 font-medium">
-            <a href="#tree-workspace" className="hover:text-white transition-colors duration-200">Interactive Tree</a>
-            <a href="#agents-spec" className="hover:text-white transition-colors duration-200">3-Agent Engine</a>
-            <Link href="/billing" className="hover:text-white transition-colors duration-200">Quotas & Billing</Link>
-          </div>
+      {/* Ambient Flowing Threads */}
+      <ThreadsBackground color="rgba(249, 115, 22, 0.06)" amplitude={24} distance={0.35} className="opacity-25 dark:opacity-30" />
 
-          <div className="flex items-center gap-3">
-            <Link
-              href="/billing"
-              className="hidden sm:inline-block text-xs font-mono px-3 py-1.5 rounded-xl glass-pill text-zinc-300 hover:text-white transition-all shadow-sm"
-            >
-              Token Quota: 250k
-            </Link>
-
-            {currentUser ? (
-              <div className="flex items-center gap-2.5">
-                <span className="text-xs font-mono text-emerald-400 glass-pill px-3 py-1.5 rounded-xl hidden sm:inline-flex items-center gap-1.5 border border-emerald-500/30">
-                  <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                  Supabase Synced
-                </span>
-                <span className="text-xs font-mono text-zinc-300 glass-pill px-3 py-1.5 rounded-xl hidden sm:inline-block">
-                  {currentUser.email}
-                </span>
-                <button
-                  onClick={handleSignOut}
-                  className="text-xs font-medium px-3.5 py-1.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] text-zinc-200 border border-white/[0.1] transition-all cursor-pointer"
-                >
-                  Sign Out
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <Link
-                  href="/login"
-                  className="text-xs font-medium px-3.5 py-1.5 rounded-xl text-zinc-300 hover:text-white transition-all"
-                >
-                  Sign In
-                </Link>
-                <Link
-                  href="/signup"
-                  className="text-xs font-semibold px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white shadow-lg shadow-indigo-500/25 border border-indigo-400/30 transition-all hover:scale-[1.02] active:scale-[0.98]"
-                >
-                  Get Started
-                </Link>
-              </div>
-            )}
-          </div>
-        </div>
-      </header>
-
-      {/* Floating Spatial Hero */}
-      <section className="pt-16 pb-12 max-w-5xl mx-auto px-6 text-center relative z-10">
-        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full glass-pill text-xs text-zinc-300 mb-6 shadow-inner animate-float-slow">
-          <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span>Antigravity Spatial Multi-Agent Learning Engine</span>
-        </div>
-
-        <h1 className="text-4xl sm:text-6xl font-black tracking-tight text-white leading-[1.1] max-w-4xl mx-auto">
-          Turn Any Learning Goal into a{" "}
-          <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-cyan-300 to-purple-400">
-            Spatial Multi-Agent Roadmap
-          </span>
-        </h1>
-
-        <p className="mt-5 text-base sm:text-lg text-zinc-400 max-w-2xl mx-auto leading-relaxed">
-          Agent 1 partitions your goal into days. Agent 2 structures daily topics and time budgets. Agent 3 delivers comprehensive lessons, practical code, citations, and courses.
-        </p>
-
-        {/* Spatial Configuration Bar */}
-        <div className="mt-10">
-          <AntigravityCard intensity={8} glowColor="rgba(99, 102, 241, 0.2)">
-            <form
-              onSubmit={handleGenerateRoadmap}
-              className="p-5 sm:p-6 glass-panel rounded-2xl flex flex-col md:flex-row gap-4 items-center"
-            >
-              <div className="flex-1 text-left w-full">
-                <label className="text-[11px] font-mono text-zinc-400 uppercase tracking-wider block mb-1.5 font-semibold">
-                  Field of Study / Syllabus Context
-                </label>
-                <input
-                  type="text"
-                  value={domain}
-                  onChange={(e) => setDomain(e.target.value)}
-                  className="w-full bg-[#040508] border border-white/[0.1] rounded-xl px-4 py-3 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-inner"
-                  placeholder="e.g. Distributed Consensus, Rust Concurrency, Machine Learning..."
-                />
-              </div>
-
-              <div className="w-full md:w-36 text-left">
-                <label className="text-[11px] font-mono text-zinc-400 uppercase tracking-wider block mb-1.5 font-semibold">
-                  Total Days
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="180"
-                  value={totalDays}
-                  onChange={(e) => setTotalDays(Number(e.target.value))}
-                  className="w-full bg-[#040508] border border-white/[0.1] rounded-xl px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-inner"
-                />
-              </div>
-
-              <div className="w-full md:w-36 text-left">
-                <label className="text-[11px] font-mono text-zinc-400 uppercase tracking-wider block mb-1.5 font-semibold">
-                  Daily Hours
-                </label>
-                <input
-                  type="number"
-                  step="0.5"
-                  min="0.5"
-                  max="16"
-                  value={dailyHours}
-                  onChange={(e) => setDailyHours(Number(e.target.value))}
-                  className="w-full bg-[#040508] border border-white/[0.1] rounded-xl px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-inner"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={isGeneratingRoadmap}
-                className="w-full md:w-auto mt-auto px-7 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white font-bold text-sm shadow-xl shadow-indigo-500/30 border border-indigo-400/30 transition-all hover:scale-[1.03] active:scale-[0.98] self-end flex items-center justify-center gap-2 cursor-pointer"
-              >
-                {isGeneratingRoadmap ? (
-                  <>
-                    <span className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>Orchestrating...</span>
-                  </>
-                ) : (
-                  "Generate Tree"
-                )}
-              </button>
-            </form>
-          </AntigravityCard>
-        </div>
-      </section>
-
-      {/* Interactive 3D Tree Workspace */}
-      <section id="tree-workspace" className="py-8 max-w-7xl mx-auto px-6 relative z-10">
-        {/* Navigation Mode Switcher */}
-        <div className="flex flex-col sm:flex-row items-center justify-between pb-4 border-b border-white/[0.08] gap-4">
-          <div className="flex items-center gap-3">
-            <span className="text-xs font-mono text-zinc-400 uppercase font-semibold">Mode:</span>
-            <div className="inline-flex rounded-xl glass-panel p-1 text-xs">
-              <button
-                onClick={() => setNavigationMode("nonlinear")}
-                className={`px-3.5 py-1.5 rounded-lg transition-all font-medium ${
-                  navigationMode === "nonlinear"
-                    ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/30"
-                    : "text-zinc-400 hover:text-white"
-                }`}
-              >
-                Node-Select Mode (Arbitrary)
-              </button>
-              <button
-                onClick={() => setNavigationMode("sequential")}
-                className={`px-3.5 py-1.5 rounded-lg transition-all font-medium ${
-                  navigationMode === "sequential"
-                    ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/30"
-                    : "text-zinc-400 hover:text-white"
-                }`}
-              >
-                Sequential Mode (Linear)
-              </button>
-            </div>
-          </div>
-
-          <div className="text-xs text-zinc-400 flex items-center gap-5">
-            <span className="flex items-center gap-2">
-              <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50" /> Completed
-            </span>
-            <span className="flex items-center gap-2">
-              <span className="h-2.5 w-2.5 rounded-full bg-indigo-400 shadow-sm shadow-indigo-400/50 animate-pulse" /> Active
-            </span>
-            <span className="flex items-center gap-2">
-              <span className="h-2.5 w-2.5 rounded-full bg-zinc-600" /> Pending
-            </span>
-          </div>
-        </div>
-
-        {/* Tree Layout: Split View (Hierarchical Tree on Left, Teacher Panel on Right) */}
-        <div className="mt-8 grid grid-cols-1 lg:grid-cols-12 gap-7 items-start">
-          {/* Left Column: Hierarchical Roadmap Tree (Agent 1 & Agent 2) */}
-          <div className="lg:col-span-5 space-y-4">
-            <div className="p-4 rounded-2xl glass-panel flex items-center justify-between border-indigo-500/20">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] uppercase font-mono tracking-widest text-indigo-400 font-bold">
-                    Agent 1: Roadmap Structure
-                  </span>
-                  {currentUser ? (
-                    <span className="text-[9px] uppercase font-mono bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full flex items-center gap-1">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                      Supabase Cloud DB
-                    </span>
-                  ) : (
-                    <span className="text-[9px] uppercase font-mono bg-amber-500/15 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full">
-                      Guest Simulation
-                    </span>
-                  )}
-                </div>
-                <h2 className="text-sm font-bold text-white mt-0.5">{domain}</h2>
-              </div>
-              <span className="text-xs font-mono text-zinc-300 glass-pill px-3 py-1 rounded-lg">
-                {roadmapDays.length} Days
-              </span>
-            </div>
-
-            {/* Days and Topics Accordion Tree with Antigravity 3D Cards */}
-            <div className="space-y-3.5 max-h-[640px] overflow-y-auto pr-1.5">
-              {roadmapDays.map((day) => {
-                const isSelected = selectedDayId === day.id;
-                return (
-                  <AntigravityCard
-                    key={day.id}
-                    intensity={10}
-                    glowColor={isSelected ? "rgba(99, 102, 241, 0.3)" : "rgba(255, 255, 255, 0.05)"}
-                  >
-                    <div
-                      className={`p-4 rounded-2xl transition-all duration-300 ${
-                        isSelected
-                          ? "glass-panel-elevated ring-1 ring-indigo-500/40"
-                          : "glass-panel hover:border-white/20"
-                      }`}
-                    >
-                      {/* Day Header Node */}
-                      <div
-                        onClick={() => {
-                          setSelectedDayId(day.id);
-                          if ((!day.topics || day.topics.length === 0) && roadmapId) {
-                            handleFetchDayTopics(roadmapId, day.id);
-                          } else if (day.topics && day.topics.length > 0) {
-                            setSelectedTopicId(day.topics[0].id);
-                            handleFetchLesson(day.topics[0].id, day.topics[0].title);
-                          }
-                        }}
-                        className="cursor-pointer flex items-start justify-between gap-3"
-                      >
-                        <div className="flex items-start gap-3">
-                          <span
-                            className={`h-8 w-8 rounded-xl text-xs font-mono font-bold flex items-center justify-center shrink-0 mt-0.5 shadow-md ${
-                              day.status === "completed"
-                                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-                                : day.status === "in_progress"
-                                ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 shadow-indigo-500/20"
-                                : "bg-white/[0.05] text-zinc-400 border border-white/10"
-                            }`}
-                          >
-                            D{day.day_number}
-                          </span>
-                          <div>
-                            <h3 className="font-bold text-sm text-zinc-100 leading-snug">
-                              {day.title.startsWith(`Day ${day.day_number}:`) ? day.title : `Day ${day.day_number}: ${day.title}`}
-                            </h3>
-                            <p className="text-xs text-zinc-400 mt-1 line-clamp-2 leading-relaxed">
-                              {day.description}
-                            </p>
-                          </div>
-                        </div>
-
-                        <span className="text-[11px] text-zinc-400 font-mono shrink-0 glass-pill px-2 py-0.5 rounded">
-                          {day.topics.length > 0 ? `${day.topics.length} topics` : "Expand"}
-                        </span>
-                      </div>
-
-                      {/* Subtopic Nodes (Agent 2: Daily Structure) */}
-                      {isSelected && (
-                        <div className="px-1 pb-1 pt-3.5 border-t border-white/[0.08] mt-3 space-y-2">
-                          <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 mb-2 flex items-center justify-between">
-                            <span className="text-indigo-300 font-semibold">Agent 2: Daily Subtopics</span>
-                            <span>{dailyHours}h budgeted</span>
-                          </div>
-
-                          {isLoadingTopics ? (
-                            <div className="p-4 text-center text-xs text-indigo-300 font-mono flex items-center justify-center gap-2">
-                              <span className="animate-spin">⚙</span> Agent 2 calculating topic time budgets...
-                            </div>
-                          ) : (
-                            day.topics.map((t) => {
-                              const isTopicSelected = selectedTopicId === t.id;
-                              return (
-                                <div
-                                  key={t.id}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedTopicId(t.id);
-                                    handleFetchLesson(t.id, t.title);
-                                  }}
-                                  className={`p-3 rounded-xl border cursor-pointer transition-all duration-200 flex items-center justify-between gap-3 ${
-                                    isTopicSelected
-                                      ? "bg-indigo-600/20 border-indigo-400/60 text-white shadow-md shadow-indigo-500/10"
-                                      : "bg-black/30 border-white/[0.06] text-zinc-300 hover:border-white/20 hover:bg-white/[0.02]"
-                                  }`}
-                                >
-                                  <div className="flex items-center gap-2.5">
-                                    <span
-                                      className={`h-2.5 w-2.5 rounded-full ${
-                                        t.status === "completed"
-                                          ? "bg-emerald-400 shadow-sm shadow-emerald-400/50"
-                                          : t.status === "in_progress"
-                                          ? "bg-indigo-400 shadow-sm shadow-indigo-400/50 animate-pulse"
-                                          : "bg-zinc-600"
-                                      }`}
-                                    />
-                                    <div>
-                                      <div className="text-xs font-semibold">{t.title}</div>
-                                      <div className="text-[11px] text-zinc-400 font-mono">
-                                        {t.estimated_minutes} min study session
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  <span className="text-[10px] font-mono text-indigo-300 glass-pill px-2.5 py-0.5 rounded border border-indigo-400/20">
-                                    {isTopicSelected ? "Active" : "Inspect"}
-                                  </span>
-                                </div>
-                              );
-                            })
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </AntigravityCard>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Right Column: Agent 3 Daily Teacher & Resource Curator */}
+      {/* =========================================================================
+          SECTION 0: THE HERO COCKPIT (Editorial Asymmetrical Layout)
+          ========================================================================= */}
+      <section id="cockpit" className="pt-28 sm:pt-36 pb-20 max-w-[1340px] mx-auto px-6 sm:px-10 relative z-10 min-h-[92vh] flex flex-col justify-between">
+        {/* Top Header Row with Smooth Hero Visual Anchor */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14 items-center relative z-10">
+          {/* Left Column: Headline & Value Proposition */}
           <div className="lg:col-span-7">
-            <AntigravityCard intensity={6} glowColor="rgba(99, 102, 241, 0.25)">
-              <div className="glass-panel-elevated rounded-3xl p-6 sm:p-8 backdrop-blur-2xl">
-                <div className="flex items-center justify-between pb-4 border-b border-white/[0.08]">
-                  <div>
-                    <span className="text-[10px] font-mono uppercase tracking-widest text-indigo-400 font-bold">
-                      Agent 3: Daily Teacher
-                    </span>
-                    <h3 className="text-lg sm:text-xl font-bold text-white mt-1">
-                      {selectedTopic?.title || "Select a Topic to Begin Lesson"}
-                    </h3>
-                  </div>
+            <h1 className="text-4xl sm:text-6xl md:text-7xl lg:text-7xl xl:text-8xl font-black font-display tracking-[-0.03em] text-foreground leading-[1.02]">
+              Master Any Field.
+              <span className="block mt-2 text-muted-foreground tracking-[-0.03em] font-semibold text-3xl sm:text-5xl md:text-5xl xl:text-6xl font-display">
+                Zero Hallucinations<span className="text-orange-500">.</span>
+              </span>
+            </h1>
 
-                  <div className="flex items-center gap-2.5">
-                    <span className="text-xs font-mono text-zinc-400">
-                      Day {selectedDay?.day_number || 1}
-                    </span>
-                    <span className="text-zinc-600">|</span>
-                    <span className="text-xs font-mono text-emerald-300 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/30">
-                      {selectedTopic?.estimated_minutes || 45} mins
-                    </span>
-                  </div>
-                </div>
-
-                {/* Teacher Tabs */}
-                <div className="flex border-b border-white/[0.08] mt-5 gap-2 overflow-x-auto pb-1">
-                  {[
-                    { id: "lesson", label: "Lesson Content" },
-                    { id: "code", label: "Practical Implementation" },
-                    { id: "citations", label: "Verified Citations" },
-                    { id: "courses", label: "Recommended Courses" },
-                  ].map((tab) => (
-                    <button
-                      key={tab.id}
-                      onClick={() => setActiveTab(tab.id as any)}
-                      className={`px-4 py-2.5 text-xs font-semibold rounded-xl transition-all duration-200 cursor-pointer ${
-                        activeTab === tab.id
-                          ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 border border-indigo-400/40"
-                          : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Tab Body */}
-                <div className="mt-6 space-y-4 min-h-[420px]">
-                  {isLoadingLesson ? (
-                    <div className="flex flex-col items-center justify-center h-80 text-xs font-mono text-indigo-300 gap-3">
-                      <span className="h-8 w-8 border-3 border-indigo-400 border-t-transparent rounded-full animate-spin shadow-lg shadow-indigo-500/30" />
-                      <span>Agent 3 generating pedagogy, code & verified citations...</span>
-                    </div>
-                  ) : currentLesson ? (
-                    <>
-                      {activeTab === "lesson" && (
-                        <div className="space-y-4 text-sm text-zinc-300 leading-relaxed max-h-[460px] overflow-y-auto pr-2 font-normal">
-                          <div className="whitespace-pre-line">{currentLesson.content_markdown}</div>
-                        </div>
-                      )}
-
-                      {activeTab === "code" && (
-                        <div className="space-y-4 max-h-[460px] overflow-y-auto pr-1">
-                          {currentLesson.practical_examples && currentLesson.practical_examples.length > 0 ? (
-                            currentLesson.practical_examples.map((ex, idx) => (
-                              <div key={idx} className="space-y-2">
-                                <div className="flex items-center justify-between text-xs text-zinc-400">
-                                  <span className="font-mono font-bold text-white">{ex.title}</span>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-[10px] bg-white/[0.06] px-2 py-0.5 rounded font-mono text-indigo-300 border border-white/10">
-                                      {ex.language || "python"}
-                                    </span>
-                                    <button
-                                      onClick={() => copyCode(ex.code, idx)}
-                                      className="text-[11px] font-mono px-2 py-0.5 rounded bg-indigo-600/30 hover:bg-indigo-600 text-indigo-200 transition-all cursor-pointer"
-                                    >
-                                      {copiedCodeIndex === idx ? "✓ Copied" : "Copy"}
-                                    </button>
-                                  </div>
-                                </div>
-                                <pre className="p-4 rounded-2xl bg-[#040508] border border-white/[0.08] text-xs font-mono text-zinc-200 overflow-x-auto leading-relaxed shadow-inner">
-                                  {ex.code}
-                                </pre>
-                              </div>
-                            ))
-                          ) : (
-                            <p className="text-xs text-zinc-400">No code examples generated for this theoretical topic.</p>
-                          )}
-                        </div>
-                      )}
-
-                      {activeTab === "citations" && (
-                        <div className="space-y-3.5 max-h-[460px] overflow-y-auto pr-1">
-                          {currentLesson.citations && currentLesson.citations.length > 0 ? (
-                            currentLesson.citations.map((c, idx) => (
-                              <div key={idx} className="p-4 rounded-2xl glass-panel border-white/[0.08] hover:border-indigo-500/40 transition-all">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-xs font-bold text-white">{c.title}</span>
-                                  <span className="text-[10px] font-mono uppercase bg-indigo-500/15 text-indigo-300 px-2 py-0.5 rounded border border-indigo-400/20">
-                                    {c.source_type}
-                                  </span>
-                                </div>
-                                {c.snippet && <p className="text-xs text-zinc-400 mt-2 leading-relaxed">{c.snippet}</p>}
-                                {c.url && (
-                                  <a
-                                    href={c.url.startsWith("http") ? c.url : `https://${c.url}`}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-[11px] text-indigo-400 hover:text-indigo-300 hover:underline mt-2.5 inline-block font-mono"
-                                  >
-                                    Inspect Primary Source ↗
-                                  </a>
-                                )}
-                              </div>
-                            ))
-                          ) : (
-                            <p className="text-xs text-zinc-400">No citation sources attached.</p>
-                          )}
-                        </div>
-                      )}
-
-                      {activeTab === "courses" && (
-                        <div className="space-y-3.5 max-h-[460px] overflow-y-auto pr-1">
-                          {currentLesson.recommended_courses && currentLesson.recommended_courses.length > 0 ? (
-                            currentLesson.recommended_courses.map((course, idx) => (
-                              <div key={idx} className="p-4 rounded-2xl glass-panel border-white/[0.08] flex items-center justify-between hover:border-cyan-500/40 transition-all">
-                                <div>
-                                  <h4 className="text-sm font-bold text-white">{course.title}</h4>
-                                  <p className="text-xs text-zinc-400 mt-0.5 font-mono">{course.platform} · Level: {course.level}</p>
-                                </div>
-                                {course.url && (
-                                  <a
-                                    href={course.url.startsWith("http") ? course.url : `https://${course.url}`}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="px-3.5 py-1.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-xs font-semibold text-white border border-white/10 transition-all"
-                                  >
-                                    Enroll ↗
-                                  </a>
-                                )}
-                              </div>
-                            ))
-                          ) : (
-                            <p className="text-xs text-zinc-400">No course recommendations attached.</p>
-                          )}
-                        </div>
-                      )}
-                    </>
-                  ) : null}
-                </div>
-
-                {/* Bottom Action Footer */}
-                <div className="pt-4 mt-6 border-t border-white/[0.08] flex items-center justify-between">
-                  <span className="text-xs text-zinc-400 font-mono">Mastered this topic?</span>
-                  <button
-                    onClick={() => alert("Topic marked completed! Advancing along your trajectory.")}
-                    className="px-5 py-2.5 text-xs font-bold rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/25 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
-                  >
-                    Mark Complete & Advance →
-                  </button>
-                </div>
-              </div>
-            </AntigravityCard>
-          </div>
-        </div>
-      </section>
-
-      {/* 3-Agent Architecture Explanation */}
-      <section id="agents-spec" className="py-20 border-t border-white/[0.08] relative z-10">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="text-center max-w-2xl mx-auto mb-14">
-            <span className="text-xs uppercase font-mono tracking-widest text-indigo-400 font-bold">
-              The Multi-Agent Engine
-            </span>
-            <h2 className="text-3xl font-extrabold tracking-tight text-white mt-1.5">
-              Hierarchical 3-Agent Tree Architecture
-            </h2>
-            <p className="text-zinc-400 text-sm mt-2.5 leading-relaxed">
-              Each layer of your learning trajectory is decomposed and delivered by a specialized AI agent.
+            <p className="mt-6 text-base sm:text-lg md:text-xl text-muted-foreground max-w-xl font-body leading-relaxed font-normal">
+              A deterministic multi-agent pedagogical engine that partitions any discipline into day-budgeted milestones, interactive Socratic verification, and verifiable proof sketches.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <AntigravityCard intensity={12} glowColor="rgba(99, 102, 241, 0.2)">
-              <div className="p-6 rounded-2xl glass-panel h-full">
-                <div className="h-10 w-10 rounded-xl bg-indigo-500/15 text-indigo-400 border border-indigo-400/30 flex items-center justify-center font-mono font-bold mb-4 shadow-inner">
-                  A1
-                </div>
-                <h3 className="font-bold text-white text-base">Agent 1: Roadmap Structure Agent</h3>
-                <p className="text-xs font-mono text-zinc-400 mt-1">Root Planner</p>
-                <p className="text-xs text-zinc-400 mt-3 leading-relaxed">
-                  Ingests your domain, syllabus outline, and total allocated days. Generates the master chronological sequence of daily learning objectives (Day 1 ... Day N).
-                </p>
-              </div>
-            </AntigravityCard>
+          {/* Right Column: Smooth Architectural Sculpture (No nested cards, badges, or AI clutter) */}
+          <div className="lg:col-span-5 flex justify-center lg:justify-end">
+            <div className="relative w-full max-w-[420px] aspect-square flex items-center justify-center group select-none">
+              {/* Soft Ambient Diffused Backlight */}
+              <div className="absolute inset-6 bg-gradient-to-tr from-orange-500/15 via-white/5 to-transparent blur-3xl opacity-50 group-hover:opacity-80 transition-opacity duration-700 pointer-events-none" />
 
-            <AntigravityCard intensity={12} glowColor="rgba(6, 182, 212, 0.2)">
-              <div className="p-6 rounded-2xl glass-panel h-full">
-                <div className="h-10 w-10 rounded-xl bg-cyan-500/15 text-cyan-400 border border-cyan-400/30 flex items-center justify-center font-mono font-bold mb-4 shadow-inner">
-                  A2
-                </div>
-                <h3 className="font-bold text-white text-base">Agent 2: Daily Structure Agent</h3>
-                <p className="text-xs font-mono text-zinc-400 mt-1">Curriculum Designer</p>
-                <p className="text-xs text-zinc-400 mt-3 leading-relaxed">
-                  Takes a given day from Agent 1 and breaks it down into discrete subtopics (Topic 1 ... Topic N) with calculated time budgets matching your daily hours.
-                </p>
+              {/* Seamless Masked Glass Sculpture */}
+              <div className="relative w-full h-full overflow-hidden [mask-image:radial-gradient(ellipse_at_center,black_70%,transparent_100%)]">
+                <img
+                  src="/images/hero-glass-matrix.png"
+                  alt="Architectural Topological Sculpture"
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-1000 ease-out"
+                />
               </div>
-            </AntigravityCard>
+            </div>
+          </div>
+        </div>
 
-            <AntigravityCard intensity={12} glowColor="rgba(16, 185, 129, 0.2)">
-              <div className="p-6 rounded-2xl glass-panel h-full">
-                <div className="h-10 w-10 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-400/30 flex items-center justify-center font-mono font-bold mb-4 shadow-inner">
-                  A3
-                </div>
-                <h3 className="font-bold text-white text-base">Agent 3: Daily Teacher Agent</h3>
-                <p className="text-xs font-mono text-zinc-400 mt-1">Pedagogy & Resource Curator</p>
-                <p className="text-xs text-zinc-400 mt-3 leading-relaxed">
-                  Delivers comprehensive instruction, runnable code examples, verified citations (papers, textbooks), and curated online courses for each topic.
-                </p>
+        {/* In-Cockpit Pit-Wall Trajectory Launcher Console (No Box Outline) */}
+        <div className="mt-12 lg:mt-16 relative z-10">
+          <div className="p-4 sm:p-6 rounded-2xl relative overflow-hidden">
+
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Terminal className="size-4 text-orange-600 dark:text-orange-400" />
+                <span className="text-xs font-mono uppercase tracking-widest text-foreground font-semibold">
+                  PIT-WALL TRAJECTORY IGNITER
+                </span>
               </div>
-            </AntigravityCard>
+              <span className="text-[10px] font-mono text-muted-foreground tracking-wider">
+                AUTONOMOUS GEMINI PIPELINE
+              </span>
+            </div>
+
+            <form onSubmit={handleDeployTrajectory} className="space-y-4">
+              <div className="flex flex-col md:flex-row items-stretch gap-3">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    value={domainInput}
+                    onChange={(e) => setDomainInput(e.target.value)}
+                    placeholder="ENTER DOMAIN (e.g. Vulkan Swapchains, Quantum Algorithms, BGMI Tactical Pacing)..."
+                    className="w-full h-13 px-4 rounded-xl bg-background dark:bg-black/60 border border-input dark:border-white/15 text-sm sm:text-base font-mono text-foreground placeholder:text-muted-foreground focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 transition-all"
+                    required
+                  />
+                  <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[10px] font-mono text-muted-foreground uppercase tracking-widest hidden sm:inline">
+                    DOMAIN INVARIANT
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <CustomDropdown<number>
+                    value={totalDaysInput}
+                    onChange={setTotalDaysInput}
+                    accentColor="lime"
+                    triggerClassName="h-13 min-w-[155px]"
+                    options={[
+                      { value: 7, label: "7 Days Sprint", sublabel: "High-density burst" },
+                      { value: 14, label: "14 Days Masterclass", sublabel: "Core engineering rigor" },
+                      { value: 21, label: "21 Days Deep Dive", sublabel: "Advanced synthesis" },
+                      { value: 30, label: "30 Days Comprehensive", sublabel: "Exhaustive mastery" },
+                    ]}
+                  />
+
+                  <CustomDropdown<number>
+                    value={dailyHoursInput}
+                    onChange={setDailyHoursInput}
+                    accentColor="lime"
+                    triggerClassName="h-13 min-w-[135px]"
+                    options={[
+                      { value: 1.5, label: "1.5 hrs/day", sublabel: "Focused pacing" },
+                      { value: 2.5, label: "2.5 hrs/day", sublabel: "Target baseline" },
+                      { value: 4.0, label: "4.0 hrs/day", sublabel: "Immersion velocity" },
+                    ]}
+                  />
+
+                  <StarBorder as="div" color="#f97316" speed="3.5s" className="h-13">
+                    <button
+                      type="submit"
+                      disabled={isGenerating}
+                      className="h-13 px-6 sm:px-8 rounded-xl bg-orange-500 hover:bg-orange-400 text-black font-sans font-black text-xs sm:text-sm tracking-wider uppercase transition-all flex items-center gap-2 cursor-pointer shadow-[0_0_24px_rgba(249,115,22,0.4)] active:scale-95 disabled:opacity-50"
+                    >
+                      {isGenerating ? (
+                        <>
+                          <Loader2 className="size-4 animate-spin text-black" />
+                          <span>SYNTHESIZING...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>IGNITE TRAJECTORY</span>
+                          <ArrowRight className="size-4 stroke-[3]" />
+                        </>
+                      )}
+                    </button>
+                  </StarBorder>
+                </div>
+              </div>
+
+              {/* Quick Launch Pre-set Tags */}
+              <div className="flex flex-wrap items-center gap-2 pt-2 text-[11px] font-mono text-muted-foreground">
+                <span className="uppercase tracking-widest text-foreground/50">CONVICTION TRACKS:</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDomainInput("BGMI Tactical Frame Pacing & Latency Telemetry");
+                    setTotalDaysInput(7);
+                    setDailyHoursInput(2.0);
+                  }}
+                  className="px-2.5 py-1 rounded bg-muted dark:bg-white/5 hover:bg-muted/80 dark:hover:bg-white/10 text-foreground hover:text-orange-500 transition-colors border border-border dark:border-white/10"
+                >
+                  BGMI Tactical Latency
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDomainInput("Distributed Systems & Raft Consensus");
+                    setTotalDaysInput(14);
+                    setDailyHoursInput(2.5);
+                  }}
+                  className="px-2.5 py-1 rounded bg-muted dark:bg-white/5 hover:bg-muted/80 dark:hover:bg-white/10 text-foreground hover:text-orange-500 transition-colors border border-border dark:border-white/10"
+                >
+                  Distributed Consensus
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDomainInput("Classical Guitar Biomechanics & Bach Polyphony");
+                    setTotalDaysInput(7);
+                    setDailyHoursInput(2.0);
+                  }}
+                  className="px-2.5 py-1 rounded bg-muted dark:bg-white/5 hover:bg-muted/80 dark:hover:bg-white/10 text-foreground hover:text-orange-500 transition-colors border border-border dark:border-white/10"
+                >
+                  Bach Voice Leading
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDomainInput("Quantum State Tomography & Hilbert Spaces");
+                    setTotalDaysInput(21);
+                    setDailyHoursInput(3.0);
+                  }}
+                  className="px-2.5 py-1 rounded bg-muted dark:bg-white/5 hover:bg-muted/80 dark:hover:bg-white/10 text-foreground hover:text-orange-500 transition-colors border border-border dark:border-white/10"
+                >
+                  Quantum Mechanics
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="border-t border-white/[0.08] py-8 text-center text-xs text-zinc-500 relative z-10">
-        <p>© 2026 Roadmap.ai. Antigravity Spatial Multi-Agent Learning Engine.</p>
+      {/* =========================================================================
+          SECTION 1: DUAL VELOCITY MARQUEE BELTS (Accelerates with Lenis Scroll)
+          ========================================================================= */}
+      <section className="py-2 border-y border-border dark:border-white/10 bg-muted/40 dark:bg-black/40 backdrop-blur-md relative z-10">
+        <VelocityMarquee
+          baseSpeed={1.0}
+          direction="left"
+          items={[
+            "01 ARCHITECT",
+            "02 STRUCTURE",
+            "03 SOCRATIC",
+            "FIRST PRINCIPLES",
+            "ZERO SPECULATIVE FILLER",
+            "MINUTE-BUDGETED DAGs",
+            "HIGH-VELOCITY COGNITION",
+          ]}
+        />
+        <div className="h-[1px] bg-border dark:bg-white/5 w-full" />
+        <VelocityMarquee
+          baseSpeed={1.0}
+          direction="right"
+          items={[
+            "DETERMINISTIC PEDAGOGY",
+            "120HZ SCROLL VELOCITY",
+            "REPRODUCIBLE MASTERY",
+            "SUB-MILLISECOND RIGOR",
+            "TACTICAL MERMAID TOPOLOGY",
+            "DOMAIN NATIVE DRILLS",
+          ]}
+        />
+      </section>
+
+      {/* =========================================================================
+          SECTION 2: THE IMPACT MANIFESTO (Editorial Spread & Stat Matrix)
+          ========================================================================= */}
+      <section className="py-28 sm:py-36 max-w-[1240px] mx-auto px-6 sm:px-10 relative z-10">
+        <div className="max-w-4xl mx-auto text-center">
+          <div className="inline-flex items-center gap-2 mb-6 px-3 py-1 rounded-full bg-muted dark:bg-white/5 border border-border dark:border-white/10">
+            <span className="size-1.5 rounded-full bg-orange-500" />
+            <span className="text-[11px] font-mono uppercase tracking-[0.25em] text-muted-foreground font-semibold">
+              PEDAGOGICAL FIDUCIARY MANIFESTO
+            </span>
+          </div>
+
+          <blockquote className="text-3xl sm:text-5xl md:text-6xl font-normal font-serif tracking-tight text-foreground leading-[1.1] italic">
+            “Redefining limits. Stripping away the fluff. Enforcing first-principles mastery in every single session.”
+          </blockquote>
+
+          <p className="mt-8 text-base sm:text-lg text-muted-foreground max-w-2xl mx-auto font-body leading-relaxed">
+            Most online platforms deliver speculative course outlines or generic summaries. Roadmap.ai deploys a deterministic 3-agent pit wall that calculates your exact cognitive budget, maps prerequisite DAGs, and verifies understanding through domain-native Socratic dialogue.
+          </p>
+        </div>
+
+        {/* Architectural Photo Strip */}
+        <div className="mt-14 relative w-full h-56 sm:h-80 rounded-3xl overflow-hidden border border-border dark:border-white/10 group shadow-2xl bg-black">
+          <img
+            src="/images/manifesto-architecture.png"
+            alt="Brutalist architectural concrete and obsidian glass junction"
+            className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-700 ease-out brightness-90 dark:brightness-85"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-background/95 via-transparent to-background/20" />
+          <div className="absolute bottom-4 left-6 right-6 flex items-center justify-between text-xs font-mono text-muted-foreground">
+            <div className="flex items-center gap-2">
+              <span className="size-1.5 rounded-full bg-orange-500" />
+              <span className="uppercase tracking-widest text-[10px] text-foreground font-semibold">
+                ARCHITECTURAL INVARIANT // DETERMINISTIC RIGOR
+              </span>
+            </div>
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground hidden sm:inline">
+              HASSELBLAD MEDIUM FORMAT • MONOCHROME
+            </span>
+          </div>
+        </div>
+
+        {/* 4-Cell Telemetry Gauges with AnimatedCounter */}
+        <div className="mt-12 grid grid-cols-2 md:grid-cols-4 gap-px bg-border dark:bg-white/10 rounded-2xl border border-border dark:border-white/10 overflow-hidden shadow-lg dark:shadow-2xl backdrop-blur-md">
+          <div className="p-6 sm:p-8 bg-card dark:bg-[#07080a] flex flex-col justify-between">
+            <span className="text-[11px] font-mono tracking-[0.2em] uppercase text-muted-foreground">
+              ENROLLED PORTFOLIOS
+            </span>
+            <div className="mt-4">
+              <span className="text-3xl sm:text-5xl font-black text-foreground font-mono">
+                {isLoadingRoadmaps ? "..." : <AnimatedCounter value={roadmaps.length} duration={900} />}
+              </span>
+              <span className="text-xs text-orange-600 dark:text-orange-400 font-mono ml-2 font-semibold uppercase">ACTIVE</span>
+            </div>
+          </div>
+
+          <div className="p-6 sm:p-8 bg-card dark:bg-[#07080a] flex flex-col justify-between">
+            <span className="text-[11px] font-mono tracking-[0.2em] uppercase text-muted-foreground">
+              CURRICULUM DAYS
+            </span>
+            <div className="mt-4">
+              <span className="text-3xl sm:text-5xl font-black text-foreground font-mono">
+                {isLoadingRoadmaps ? "..." : <AnimatedCounter value={totalDaysSum} duration={1100} />}
+              </span>
+              <span className="text-xs text-muted-foreground font-mono ml-2 font-semibold uppercase">PACED</span>
+            </div>
+          </div>
+
+          <div className="p-6 sm:p-8 bg-card dark:bg-[#07080a] flex flex-col justify-between">
+            <span className="text-[11px] font-mono tracking-[0.2em] uppercase text-muted-foreground">
+              TIME BUDGET
+            </span>
+            <div className="mt-4">
+              <span className="text-3xl sm:text-5xl font-black text-foreground font-mono">
+                {isLoadingRoadmaps ? (
+                  "..."
+                ) : (
+                  <AnimatedCounter value={parseFloat(avgHours) || 2.0} decimals={1} duration={1000} />
+                )}
+              </span>
+              <span className="text-xs text-muted-foreground font-mono ml-2 font-semibold uppercase">HRS/DAY</span>
+            </div>
+          </div>
+
+          <div className="p-6 sm:p-8 bg-card dark:bg-[#07080a] flex flex-col justify-between">
+            <span className="text-[11px] font-mono tracking-[0.2em] uppercase text-muted-foreground">
+              VERIFICATION RIGOR
+            </span>
+            <div className="mt-4">
+              <span className="text-3xl sm:text-5xl font-black text-foreground font-mono">
+                <AnimatedCounter value={100} suffix="%" duration={1200} />
+              </span>
+              <span className="text-xs text-emerald-600 dark:text-emerald-400 font-mono ml-2 font-semibold uppercase">PROOF</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* =========================================================================
+          SECTION 2.5: CONSENSYS STICKY PRODUCT STACK (Dynamic Agent Pipeline)
+          ========================================================================= */}
+      <StickyProductStack
+        onSelectTrack={handleQuickLaunch}
+        onOpenModal={() => setIsModalOpen(true)}
+      />
+
+      {/* =========================================================================
+          SECTION 3: THE 3-AGENT MACHINE SHOWCASE (LN4 Helmets / Machine Equivalent)
+          ========================================================================= */}
+      <section id="agents" className="relative z-10 border-t border-border dark:border-white/10 bg-muted/20 dark:bg-black/30">
+        <HorizontalAgentShowcase />
+      </section>
+
+      {/* =========================================================================
+          SECTION 4: CURRICULA & TRAJECTORIES MATRIX
+          ========================================================================= */}
+      <section id="portfolio" className="py-24 max-w-[1340px] mx-auto px-6 sm:px-10 relative z-10">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-8 border-b border-border dark:border-white/10 mb-12">
+          <div>
+            <div className="inline-flex items-center gap-2 mb-2">
+              <span className="size-2 rounded-full bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.8)]" />
+              <span className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground font-semibold">
+                CURRICULA REPERTOIRE
+              </span>
+            </div>
+            <h2 className="text-3xl sm:text-5xl font-black tracking-[-0.04em] text-foreground uppercase font-display">
+              Curricula & Trajectories<span className="text-orange-500">.</span>
+            </h2>
+          </div>
+
+          <Button
+            variant="orange"
+            size="sm"
+            onClick={() => setIsModalOpen(true)}
+            className="font-mono text-xs uppercase tracking-wider font-bold h-10 px-5"
+          >
+            <Plus className="size-3.5 mr-2" />
+            Deploy New Trajectory
+          </Button>
+        </div>
+
+        {/* Curricula Cards Grid (Strictly Level Heights & Border Glow) */}
+        <div>
+          {isLoadingRoadmaps ? (
+            <div className="py-24 text-center rounded-2xl bg-card dark:bg-white/[0.02] border border-border dark:border-white/10 p-12">
+              <Loader2 className="size-8 text-orange-500 animate-spin mx-auto mb-4" />
+              <p className="text-xs font-mono text-muted-foreground tracking-wider">
+                TELEMETRY SYNC: Querying Supabase PostgreSQL...
+              </p>
+            </div>
+          ) : roadmaps.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-stretch">
+              {roadmaps.map((r) => {
+                const progress = r.progress_percentage || 0;
+                const handleOpenTrajectory = () => {
+                  if (!currentUser) {
+                    transitionTo(`/login?redirectedFrom=${encodeURIComponent(`/workspace?id=${r.id}`)}`);
+                  } else {
+                    transitionTo(`/workspace?id=${r.id}`);
+                  }
+                };
+
+                const coverImage = (() => {
+                  const arch = (r.domain_archetype || "").toLowerCase();
+                  const title = (r.title || "").toLowerCase();
+                  if (arch.includes("esport") || title.includes("bgmi") || title.includes("game")) return "/images/track-esports.png";
+                  if (arch.includes("system") || title.includes("distributed") || title.includes("consensus")) return "/images/track-distributed.png";
+                  if (arch.includes("music") || title.includes("guitar") || title.includes("bach")) return "/images/track-polyphony.png";
+                  return "/images/hero-glass-matrix.png";
+                })();
+
+                return (
+                  <div
+                    key={r.id}
+                    onClick={handleOpenTrajectory}
+                    className="cursor-pointer group block w-full h-full"
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        handleOpenTrajectory();
+                      }
+                    }}
+                  >
+                    <TiltedCard maxAngle={3} scale={1.01} showGlare={false} className="w-full h-full">
+                      <div className="rounded-2xl bg-card dark:bg-[#090b0e] border border-border dark:border-white/10 group-hover:border-orange-500/80 group-hover:shadow-[0_0_24px_rgba(249,115,22,0.22)] flex flex-col justify-between h-full min-h-[440px] shadow-sm dark:shadow-xl transition-all duration-300 p-0 overflow-hidden">
+                        {/* 16:9 Cover Image */}
+                        <div className="relative w-full h-44 shrink-0 overflow-hidden bg-black/80">
+                          <img
+                            src={coverImage}
+                            alt={r.title}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-card dark:from-[#090b0e] via-black/25 to-transparent" />
+                          
+                          <div className="absolute top-3 left-3 right-3 flex items-center justify-between gap-2">
+                            <span className="text-[10px] font-mono uppercase tracking-widest text-white px-2.5 py-1 rounded bg-black/70 backdrop-blur-md border border-white/20 font-bold">
+                              {r.domain_archetype?.replace("_", " ") || "DISCIPLINE"}
+                            </span>
+                            {currentUser && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  requestDeleteRoadmap(r, e);
+                                }}
+                                disabled={deletingId === r.id}
+                                className="text-xs text-white/80 hover:text-red-400 p-1.5 rounded bg-black/60 backdrop-blur-md border border-white/15 hover:bg-red-500/20 transition-colors cursor-pointer relative z-20"
+                                title="Delete trajectory"
+                              >
+                                <Trash2 className="size-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="p-6 flex-1 flex flex-col justify-between">
+                          <div>
+                            <h3 className="text-lg font-bold text-foreground group-hover:text-orange-500 transition-colors line-clamp-2 h-14 font-display">
+                              {r.title}
+                            </h3>
+
+                            <div className="flex items-center gap-3 text-xs text-muted-foreground mt-2 font-mono">
+                              <span>{r.total_days} Days</span>
+                              <span>•</span>
+                              <span>{r.daily_hours_commitment} hrs/day</span>
+                            </div>
+                          </div>
+
+                          <div className="mt-5 pt-4 border-t border-border dark:border-white/10">
+                            <div className="flex items-center justify-between text-xs font-mono text-muted-foreground mb-2">
+                              <span>Curriculum Velocity</span>
+                              <span className="text-orange-500 font-semibold">{progress}%</span>
+                            </div>
+                            <Progress
+                              value={progress}
+                              indicatorClassName="bg-gradient-to-r from-orange-500 to-amber-300"
+                              className="mb-4 h-1.5 bg-muted dark:bg-white/10"
+                            />
+
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-mono text-muted-foreground">
+                                {r.completed_topics_count || 0} topics mastered
+                              </span>
+                              <div className="text-xs font-bold text-foreground group-hover:text-orange-500 flex items-center gap-1 font-mono uppercase tracking-wider">
+                                <span>Launch Studio</span>
+                                <ArrowUpRight className="size-3.5 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </TiltedCard>
+                  </div>
+                );
+              })}
+
+              {/* Quick Deploy New Card */}
+              <div
+                onClick={() => setIsModalOpen(true)}
+                className="rounded-2xl bg-card/60 dark:bg-white/[0.015] hover:bg-card dark:hover:bg-white/[0.04] border border-dashed border-border dark:border-white/20 hover:border-orange-500/80 hover:shadow-[0_0_24px_rgba(249,115,22,0.18)] flex flex-col items-center justify-center text-center cursor-pointer min-h-[440px] h-full p-8 group transition-all"
+              >
+                <div className="size-14 rounded-full border border-border dark:border-white/20 group-hover:border-orange-500 group-hover:bg-orange-500 flex items-center justify-center text-muted-foreground group-hover:text-white transition-all mb-4">
+                  <Plus className="size-6" />
+                </div>
+                <h4 className="text-base font-mono font-bold uppercase tracking-wider text-foreground group-hover:text-orange-500 font-display">
+                  Deploy New Trajectory
+                </h4>
+                <p className="text-xs font-mono text-muted-foreground mt-2 max-w-[240px]">
+                  Deconstruct any complex subject through the multi-agent pit-wall.
+                </p>
+              </div>
+            </div>
+          ) : (
+            /* Curated Starter Trajectories (Level Heights & Border Glow) */
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
+              {/* Track 01 */}
+              <div
+                onClick={() => handleQuickLaunch("BGMI Tactical Frame Pacing & Latency Telemetry", 7, 2.0)}
+                className="cursor-pointer group block w-full h-full"
+                role="button"
+                tabIndex={0}
+              >
+                <TiltedCard maxAngle={3} scale={1.01} showGlare={false} className="w-full h-full">
+                  <div className="rounded-2xl bg-card dark:bg-[#090b0e] border border-border dark:border-white/10 group-hover:border-orange-500/80 group-hover:shadow-[0_0_24px_rgba(249,115,22,0.22)] flex flex-col justify-between h-full min-h-[440px] shadow-sm dark:shadow-xl transition-all duration-300 p-0 overflow-hidden">
+                    <div className="relative w-full h-44 shrink-0 overflow-hidden bg-black/80">
+                      <img
+                        src="/images/track-esports.png"
+                        alt="BGMI Tactical Frame Pacing"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-card dark:from-[#090b0e] via-black/25 to-transparent" />
+                      <div className="absolute top-3.5 left-4">
+                        <span className="text-[10px] font-mono uppercase tracking-widest text-white px-2.5 py-1 rounded bg-black/70 backdrop-blur-md border border-white/20 font-bold">
+                          COMPETITIVE ESPORTS & GAMING
+                        </span>
+                      </div>
+                      <div className="absolute top-3.5 right-4 text-xs font-mono font-bold text-white/50">
+                        01
+                      </div>
+                    </div>
+
+                    <div className="p-6 flex-1 flex flex-col justify-between">
+                      <div>
+                        <h3 className="text-lg font-bold text-foreground uppercase group-hover:text-orange-500 transition-colors font-display line-clamp-2 h-14">
+                          BGMI Tactical Frame Pacing & Latency Telemetry
+                        </h3>
+                        <p className="text-xs text-muted-foreground mt-2 font-mono leading-relaxed line-clamp-2">
+                          Sub-millisecond touch-to-photon latency, Vulkan swapchain extensions, thread isolation, and Pochinki high-density combat profiling.
+                        </p>
+                        <div className="mt-4 space-y-1 text-xs text-muted-foreground font-mono">
+                          <div>• 7 Days Paced Duration</div>
+                          <div>• 2.0 Hours Daily Budget</div>
+                          <div>• 21 Specialized Combat Drills</div>
+                        </div>
+                      </div>
+
+                      <div className="mt-6 pt-4 border-t border-border dark:border-white/10 w-full py-2.5 px-4 rounded-xl border border-border dark:border-white/20 group-hover:border-foreground text-foreground group-hover:bg-foreground group-hover:text-background font-mono text-xs uppercase tracking-wider flex items-center justify-between transition-all">
+                        <span>Deploy Track</span>
+                        <ArrowRight className="size-3.5 group-hover:translate-x-1 transition-transform" />
+                      </div>
+                    </div>
+                  </div>
+                </TiltedCard>
+              </div>
+
+              {/* Track 02 */}
+              <div
+                onClick={() => handleQuickLaunch("Distributed Systems & Raft Consensus", 14, 2.5)}
+                className="cursor-pointer group block w-full h-full"
+                role="button"
+                tabIndex={0}
+              >
+                <TiltedCard maxAngle={3} scale={1.01} showGlare={false} className="w-full h-full">
+                  <div className="rounded-2xl bg-card dark:bg-[#090b0e] border border-border dark:border-white/10 group-hover:border-orange-500/80 group-hover:shadow-[0_0_24px_rgba(249,115,22,0.22)] flex flex-col justify-between h-full min-h-[440px] shadow-sm dark:shadow-xl transition-all duration-300 p-0 overflow-hidden">
+                    <div className="relative w-full h-44 shrink-0 overflow-hidden bg-black/80">
+                      <img
+                        src="/images/track-distributed.png"
+                        alt="Distributed Systems & Raft Invariants"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-card dark:from-[#090b0e] via-black/25 to-transparent" />
+                      <div className="absolute top-3.5 left-4">
+                        <span className="text-[10px] font-mono uppercase tracking-widest text-white px-2.5 py-1 rounded bg-black/70 backdrop-blur-md border border-white/20 font-bold">
+                          DISTRIBUTED SYSTEMS
+                        </span>
+                      </div>
+                      <div className="absolute top-3.5 right-4 text-xs font-mono font-bold text-white/50">
+                        02
+                      </div>
+                    </div>
+
+                    <div className="p-6 flex-1 flex flex-col justify-between">
+                      <div>
+                        <h3 className="text-lg font-bold text-foreground uppercase group-hover:text-orange-500 transition-colors font-display line-clamp-2 h-14">
+                          Consensus Engines & Raft Invariants
+                        </h3>
+                        <p className="text-xs text-muted-foreground mt-2 font-mono leading-relaxed line-clamp-2">
+                          Leader election state machines, Multi-Paxos quorums, LSM-Tree write-ahead logs, and Jepsen chaos verification.
+                        </p>
+                        <div className="mt-4 space-y-1 text-xs text-muted-foreground font-mono">
+                          <div>• 14 Days Paced Duration</div>
+                          <div>• 2.5 Hours Daily Budget</div>
+                          <div>• 42 Topological Topic Nodes</div>
+                        </div>
+                      </div>
+
+                      <div className="mt-6 pt-4 border-t border-border dark:border-white/10 w-full py-2.5 px-4 rounded-xl border border-border dark:border-white/20 group-hover:border-foreground text-foreground group-hover:bg-foreground group-hover:text-background font-mono text-xs uppercase tracking-wider flex items-center justify-between transition-all">
+                        <span>Deploy Track</span>
+                        <ArrowRight className="size-3.5 group-hover:translate-x-1 transition-transform" />
+                      </div>
+                    </div>
+                  </div>
+                </TiltedCard>
+              </div>
+
+              {/* Track 03 */}
+              <div
+                onClick={() => handleQuickLaunch("Classical Guitar Biomechanics & Bach Polyphony", 7, 2.0)}
+                className="cursor-pointer group block w-full h-full"
+                role="button"
+                tabIndex={0}
+              >
+                <TiltedCard maxAngle={3} scale={1.01} showGlare={false} className="w-full h-full">
+                  <div className="rounded-2xl bg-card dark:bg-[#090b0e] border border-border dark:border-white/10 group-hover:border-orange-500/80 group-hover:shadow-[0_0_24px_rgba(249,115,22,0.22)] flex flex-col justify-between h-full min-h-[440px] shadow-sm dark:shadow-xl transition-all duration-300 p-0 overflow-hidden">
+                    <div className="relative w-full h-44 shrink-0 overflow-hidden bg-black/80">
+                      <img
+                        src="/images/track-polyphony.png"
+                        alt="Classical Guitar & Bach Polyphony"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-card dark:from-[#090b0e] via-black/25 to-transparent" />
+                      <div className="absolute top-3.5 left-4">
+                        <span className="text-[10px] font-mono uppercase tracking-widest text-white px-2.5 py-1 rounded bg-black/70 backdrop-blur-md border border-white/20 font-bold">
+                          ACOUSTICS & ERGONOMICS
+                        </span>
+                      </div>
+                      <div className="absolute top-3.5 right-4 text-xs font-mono font-bold text-white/50">
+                        03
+                      </div>
+                    </div>
+
+                    <div className="p-6 flex-1 flex flex-col justify-between">
+                      <div>
+                        <h3 className="text-lg font-bold text-foreground uppercase group-hover:text-orange-500 transition-colors font-display line-clamp-2 h-14">
+                          Classical Guitar & Bach Polyphony
+                        </h3>
+                        <p className="text-xs text-muted-foreground mt-2 font-mono leading-relaxed line-clamp-2">
+                          Right-hand nail mechanics, voice leading analysis, Bach 2-part inventions, and microtonal counterpoint.
+                        </p>
+                        <div className="mt-4 space-y-1 text-xs text-muted-foreground font-mono">
+                          <div>• 7 Days Paced Duration</div>
+                          <div>• 2.0 Hours Daily Budget</div>
+                          <div>• 21 Ergonomic Drills</div>
+                        </div>
+                      </div>
+
+                      <div className="mt-6 pt-4 border-t border-border dark:border-white/10 w-full py-2.5 px-4 rounded-xl border border-border dark:border-white/20 group-hover:border-foreground text-foreground group-hover:bg-foreground group-hover:text-background font-mono text-xs uppercase tracking-wider flex items-center justify-between transition-all">
+                        <span>Deploy Track</span>
+                        <ArrowRight className="size-3.5 group-hover:translate-x-1 transition-transform" />
+                      </div>
+                    </div>
+                  </div>
+                </TiltedCard>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* =========================================================================
+          SECTION 5: MACHINE INVARIANTS & FIDUCIARY CONSOLE
+          ========================================================================= */}
+      <section className="py-24 max-w-[1340px] mx-auto px-6 sm:px-10 relative z-10 border-t border-border dark:border-white/10">
+        <div className="max-w-2xl mb-14">
+          <div className="inline-flex items-center gap-2 mb-2">
+            <span className="size-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400" />
+            <span className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
+              CORE SYSTEM INVARIANTS
+            </span>
+          </div>
+          <h2 className="text-3xl sm:text-4xl font-black tracking-[-0.03em] text-foreground uppercase">
+            Architectural Guarantees<span className="text-lime-600 dark:text-[#d4f934]">.</span>
+          </h2>
+          <p className="text-xs sm:text-sm text-muted-foreground font-mono mt-2 leading-relaxed">
+            Zero hallucinated tangents. Every lesson is anchored in mathematical time budgeting and verifiable diagnostics.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 font-mono">
+          <div className="p-6 rounded-2xl bg-card dark:bg-white/[0.02] border border-border dark:border-white/10 flex flex-col justify-between shadow-xs">
+            <div>
+              <span className="text-xs font-bold text-orange-600 dark:text-orange-400">01 / DECOMPOSITION</span>
+              <h4 className="text-sm font-bold text-foreground mt-2 uppercase font-display">First-Principles Partitioning</h4>
+              <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
+                Agent 01 breaks any domain down into chronological daily milestones without speculative tangents.
+              </p>
+            </div>
+            <div className="mt-6 pt-3 border-t border-border dark:border-white/10 text-[10px] text-muted-foreground uppercase">
+              AGENT 01 ARCHITECT
+            </div>
+          </div>
+
+          <div className="p-6 rounded-2xl bg-card dark:bg-white/[0.02] border border-border dark:border-white/10 flex flex-col justify-between shadow-xs">
+            <div>
+              <span className="text-xs font-bold text-lime-700 dark:text-[#d4f934]">02 / TIME-BUDGET</span>
+              <h4 className="text-sm font-bold text-foreground mt-2 uppercase font-display">Minute-Allocated DAGs</h4>
+              <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
+                Agent 02 calculates minute budgets for foundational drills, applications, and edge cases.
+              </p>
+            </div>
+            <div className="mt-6 pt-3 border-t border-border dark:border-white/10 text-[10px] text-muted-foreground uppercase">
+              AGENT 02 STRUCTURE
+            </div>
+          </div>
+
+          <div className="p-6 rounded-2xl bg-card dark:bg-white/[0.02] border border-border dark:border-white/10 flex flex-col justify-between shadow-xs">
+            <div>
+              <span className="text-xs font-bold text-cyan-600 dark:text-cyan-400">03 / SOCRATIC</span>
+              <h4 className="text-sm font-bold text-foreground mt-2 uppercase font-display">Diagnostic Verification</h4>
+              <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
+                Agent 03 tests comprehension via counter-example interrogations rather than trivial multiple-choice quiz questions.
+              </p>
+            </div>
+            <div className="mt-6 pt-3 border-t border-border dark:border-white/10 text-[10px] text-muted-foreground uppercase">
+              AGENT 03 TEACHER
+            </div>
+          </div>
+
+          <div className="p-6 rounded-2xl bg-card dark:bg-white/[0.02] border border-border dark:border-white/10 flex flex-col justify-between shadow-xs">
+            <div>
+              <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">04 / PERSISTENCE</span>
+              <h4 className="text-sm font-bold text-foreground mt-2 uppercase font-display">PostgreSQL Isolation</h4>
+              <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
+                Supabase schema with compound B-tree indexing and Row Level Security guarantees isolated multi-tenant learning state.
+              </p>
+            </div>
+            <div className="mt-6 pt-3 border-t border-border dark:border-white/10 text-[10px] text-muted-foreground uppercase">
+              SUPABASE CLOUD
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* =========================================================================
+          SECTION 5.5: CONSENSYS LARGE OFFSET CTA STATEMENT & TERMINAL CONSOLE
+          ========================================================================= */}
+      <ConsensysOffsetCta
+        onOpenModal={() => setIsModalOpen(true)}
+        onSelectTrack={handleQuickLaunch}
+      />
+
+      {/* =========================================================================
+          SECTION 6: SYNDICATE PARTNERS & RESEARCH STACK (Lando Collabs Equivalent)
+          ========================================================================= */}
+      <section className="py-14 border-t border-border dark:border-white/10 bg-muted/40 dark:bg-black/60 relative z-10">
+        <div className="max-w-[1340px] mx-auto px-6 sm:px-10 flex flex-col md:flex-row items-center justify-between gap-6 text-xs font-mono text-muted-foreground">
+          <span className="tracking-widest uppercase text-foreground/50">RESEARCH & ENGINE STACK:</span>
+          <div className="flex flex-wrap items-center gap-6 sm:gap-10 text-muted-foreground tracking-wider">
+            <span className="hover:text-foreground transition-colors">NEXT.JS 15 TURBOPACK</span>
+            <span className="hover:text-foreground transition-colors">SUPABASE POSTGRESQL</span>
+            <span className="hover:text-foreground transition-colors">LENIS 120HZ ENGINE</span>
+            <span className="hover:text-foreground transition-colors">GOOGLE GEMINI 2.5</span>
+            <span className="hover:text-foreground transition-colors">TAILWIND CSS</span>
+            <span className="hover:text-foreground transition-colors">FRAMER MOTION</span>
+          </div>
+        </div>
+      </section>
+
+      {/* =========================================================================
+          SECTION 7: RACE-SPEC FOOTER (Lando Norris Minimalist Editorial Layout)
+          ========================================================================= */}
+      <footer className="border-t border-border dark:border-white/10 py-16 px-6 sm:px-12 max-w-[1340px] mx-auto relative z-10 text-xs font-mono text-muted-foreground">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-10 mb-14">
+          <div className="md:col-span-2 space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="size-2 rounded-full bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.9)]" />
+              <span className="text-sm font-black text-foreground uppercase tracking-tight font-sans">
+                ROADMAP<span className="text-orange-500">.AI</span>
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground max-w-sm leading-relaxed">
+              Autonomous Pedagogical Syndicate. Deterministic 3-agent learning engine engineered for high-velocity cognitive mastery.
+            </p>
+          </div>
+
+          <div>
+            <div className="text-foreground uppercase font-bold tracking-widest text-[11px] mb-3">
+              NAVIGATION
+            </div>
+            <ul className="space-y-2 text-muted-foreground">
+              <li><a href="#cockpit" className="hover:text-foreground transition-colors">Cockpit</a></li>
+              <li><a href="#agents" className="hover:text-foreground transition-colors">Multi-Agent Syndicate</a></li>
+              <li><a href="#portfolio" className="hover:text-foreground transition-colors">Curricula Matrix</a></li>
+              <li><Link href="/billing" className="hover:text-foreground transition-colors">Token Quotas</Link></li>
+            </ul>
+          </div>
+
+          <div>
+            <div className="text-foreground uppercase font-bold tracking-widest text-[11px] mb-3">
+              TELEMETRY
+            </div>
+            <ul className="space-y-2 text-muted-foreground">
+              <li><span>ENGINE: v3.4 [ARMED]</span></li>
+              <li><span>DATABASE: SUPABASE OK</span></li>
+              <li><span>SCROLL: 120HZ LENIS</span></li>
+              <li><span className="text-orange-600 dark:text-orange-400">LATENCY: DETERMINISTIC</span></li>
+            </ul>
+          </div>
+        </div>
+
+        <div className="pt-8 border-t border-border dark:border-white/10 flex flex-col sm:flex-row items-center justify-between gap-4 text-muted-foreground">
+          <div>
+            © {new Date().getFullYear()} ROADMAP.AI SYNDICATE. ALL RIGHTS RESERVED.
+          </div>
+          <div className="flex items-center gap-6">
+            <span>TERMS</span>
+            <span>PRIVACY</span>
+            <span className="text-lime-700 dark:text-[#d4f934]">DETERMINISTIC COGNITION</span>
+          </div>
+        </div>
       </footer>
-    </div>
+
+      {/* Trajectory Architect Modal using Shadcn Dialog */}
+      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <DialogContent className="bg-card dark:bg-[#090b0e] border border-border dark:border-white/15 text-foreground font-mono sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="size-2 rounded-full bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.8)]" />
+              <span className="text-[11px] font-semibold tracking-[0.18em] uppercase text-muted-foreground">
+                AUTONOMOUS CURRICULUM ARCHITECT
+              </span>
+            </div>
+            <DialogTitle className="text-xl font-bold font-sans text-foreground uppercase">
+              Deploy Learning Trajectory
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Configure your domain, duration, and daily time commitment.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleDeployTrajectory} className="mt-4 space-y-4 text-xs">
+            <div>
+              <label className="text-[11px] uppercase tracking-wider text-muted-foreground block mb-1.5">
+                Field of Study / Syllabus Context
+              </label>
+              <Input
+                type="text"
+                value={domainInput}
+                onChange={(e) => setDomainInput(e.target.value)}
+                placeholder="e.g. Distributed Consensus, Classical Guitar, BGMI Combat..."
+                className="bg-background dark:bg-black/60 border-input dark:border-white/20 text-foreground font-mono"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-[11px] uppercase tracking-wider text-muted-foreground block mb-1.5">
+                  Duration (Days)
+                </label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="90"
+                  value={totalDaysInput}
+                  onChange={(e) => setTotalDaysInput(Number(e.target.value))}
+                  className="bg-background dark:bg-black/60 border-input dark:border-white/20 text-foreground font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] uppercase tracking-wider text-muted-foreground block mb-1.5">
+                  Daily Commitment (Hours)
+                </label>
+                <Input
+                  type="number"
+                  step="0.5"
+                  min="0.5"
+                  max="12"
+                  value={dailyHoursInput}
+                  onChange={(e) => setDailyHoursInput(Number(e.target.value))}
+                  className="bg-background dark:bg-black/60 border-input dark:border-white/20 text-foreground font-mono"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[11px] uppercase tracking-wider text-muted-foreground block mb-1.5">
+                Skill Level
+              </label>
+              <CustomDropdown<string>
+                value={skillLevelInput}
+                onChange={(v) => setSkillLevelInput(v as any)}
+                accentColor="orange"
+                className="w-full"
+                triggerClassName="w-full h-10 px-3.5"
+                menuClassName="w-full"
+                options={[
+                  { value: "beginner", label: "Beginner", sublabel: "Foundational Rigor & Core Invariants" },
+                  { value: "intermediate", label: "Intermediate", sublabel: "Applied Engineering & Real-world Drills" },
+                  { value: "advanced", label: "Advanced", sublabel: "Production Mastery & Edge Case Verification" },
+                ]}
+              />
+            </div>
+
+            <DialogFooter className="mt-6 flex items-center justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setIsModalOpen(false)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                Cancel
+              </Button>
+
+              <Button
+                type="submit"
+                variant="orange"
+                disabled={isGenerating}
+                className="font-mono text-xs uppercase tracking-wider font-bold"
+              >
+                {isGenerating ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin mr-2" />
+                    <span>Synthesizing...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Launch Trajectory</span>
+                    <ArrowRight className="size-4 ml-2" />
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bespoke Telemetry Confirm Dialog */}
+      <TelemetryConfirmDialog
+        open={confirmDialogOpen}
+        onOpenChange={setConfirmDialogOpen}
+        title="PURGE CURRICULUM TRAJECTORY"
+        description={
+          roadmapToDelete
+            ? `Are you sure you want to permanently delete "${roadmapToDelete.title}"? All associated topic DAG nodes, telemetry milestones, and Socratic history will be expunged from Supabase PostgreSQL.`
+            : "Are you sure you want to delete this trajectory?"
+        }
+        confirmText="PURGE FROM SUPABASE"
+        cancelText="ABORT"
+        variant="danger"
+        isLoading={deletingId !== null}
+        onConfirm={handleConfirmDelete}
+      />
+    </ClickSpark>
   );
 }

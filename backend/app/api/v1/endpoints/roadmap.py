@@ -79,7 +79,9 @@ async def structure_day(
         day_number=day["day_number"],
         day_title=day["title"],
         daily_hours=float(daily_hours),
-        domain_context=domain_context
+        domain_context=domain_context,
+        learning_objectives=day.get("learning_objectives") or [],
+        day_description=day.get("description") or ""
     )
     return topics
 
