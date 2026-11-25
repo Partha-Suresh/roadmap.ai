@@ -29,7 +29,7 @@ type SkillLevel = "beginner" | "intermediate" | "advanced";
 
 const OPEN_EVENT = "open-deploy-modal";
 /** Keeps what a visitor typed while they sign in */
-const PENDING_KEY = "daari_pending_path";
+export const PENDING_PATH_KEY = "daari_pending_path";
 
 /** Opens the "start a path" dialog from anywhere */
 export function startPath(preset: PathPreset = {}) {
@@ -63,7 +63,7 @@ export function CreateRoadmapDialog() {
         return;
       }
       try {
-        sessionStorage.setItem(PENDING_KEY, JSON.stringify(preset));
+        sessionStorage.setItem(PENDING_PATH_KEY, JSON.stringify(preset));
       } catch {
         // the visitor retypes it
       }
@@ -72,9 +72,9 @@ export function CreateRoadmapDialog() {
 
     if (userId) {
       try {
-        const pending = sessionStorage.getItem(PENDING_KEY);
+        const pending = sessionStorage.getItem(PENDING_PATH_KEY);
         if (pending) {
-          sessionStorage.removeItem(PENDING_KEY);
+          sessionStorage.removeItem(PENDING_PATH_KEY);
           show(JSON.parse(pending));
         }
       } catch {
