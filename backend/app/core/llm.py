@@ -17,6 +17,8 @@ def get_llm(temperature: float = 0.3) -> Optional[BaseChatModel]:
             api_key=groq_key,
             model="llama-3.3-70b-versatile",
             temperature=temperature,
+            timeout=settings.LLM_TIMEOUT_SECONDS,
+            max_retries=1,
         )
 
     # 2. Check Google Gemini
@@ -31,6 +33,8 @@ def get_llm(temperature: float = 0.3) -> Optional[BaseChatModel]:
             model=primary_model,
             google_api_key=google_key,
             temperature=temperature,
+            timeout=settings.LLM_TIMEOUT_SECONDS,
+            max_retries=1,  # the fallback models below are the retries
         )
         
         # Candidate fallback models with working quotas
@@ -40,6 +44,8 @@ def get_llm(temperature: float = 0.3) -> Optional[BaseChatModel]:
                 model=m,
                 google_api_key=google_key,
                 temperature=temperature,
+                timeout=settings.LLM_TIMEOUT_SECONDS,
+                max_retries=1,
             )
             for m in fallback_models
         ]
@@ -57,6 +63,8 @@ def get_llm(temperature: float = 0.3) -> Optional[BaseChatModel]:
             model="gpt-4o-mini",
             openai_api_key=openai_key,
             temperature=temperature,
+            timeout=settings.LLM_TIMEOUT_SECONDS,
+            max_retries=1,
         )
 
     # 3. Check Anthropic
@@ -67,6 +75,8 @@ def get_llm(temperature: float = 0.3) -> Optional[BaseChatModel]:
             model="claude-3-5-haiku-20241022",
             anthropic_api_key=anthropic_key,
             temperature=temperature,
+            timeout=settings.LLM_TIMEOUT_SECONDS,
+            max_retries=1,
         )
 
     # If no LLM key provided, return None (agents will use structured heuristic fallback)

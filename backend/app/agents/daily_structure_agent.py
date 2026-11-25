@@ -60,7 +60,7 @@ def run_daily_structure_agent(
 
     if llm:
         system_prompt = (
-            "You are the universal Daily Structure Agent (Agent 2) for Roadmap.ai. "
+            "You are the universal Daily Structure Agent (Agent 2) for Daari. "
             f"Your objective is to architect an organic, highly tailored set of {target_count} subtopics "
             "for a single day of an intensive roadmap following a strict pedagogical learning progression.\n\n"
             f"{domain_advice}\n\n"

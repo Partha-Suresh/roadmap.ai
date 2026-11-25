@@ -74,7 +74,7 @@ DISCIPLINE CONTEXT: MUSIC & INSTRUMENTAL CRAFT
 - Focus on posture/ergonomics, hand technique, scale/chord transitions, metronome timing drills, and musical interpretation.`;
       }
 
-      const prompt = `You are Agent 2: Daily Structure Agent for Roadmap.ai, an elite learning and curriculum architecture engine.
+      const prompt = `You are Agent 2: Daily Structure Agent for Daari, an elite learning and curriculum architecture engine.
 Your objective is to dynamically architect an organic, highly tailored set of subtopics for Day ${dayNumber || 1} of an intensive roadmap.
 
 Subject / Field: "${cleanDomain}"

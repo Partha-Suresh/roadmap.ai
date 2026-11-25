@@ -99,8 +99,7 @@ explain how term increments prevent split-brain?"
         {/* Sticky Left Column (Consensys-inspired) */}
         <div className="lg:col-span-5 lg:sticky lg:top-28 space-y-8">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-muted dark:bg-white/5 border border-border dark:border-white/10 text-muted-foreground text-[11px] font-mono uppercase tracking-[0.2em] font-semibold mb-4">
-              <span className="size-1.5 rounded-full bg-orange-500 animate-pulse" />
+            <div className="inline-flex items-center px-3 py-1 rounded-full bg-muted dark:bg-white/5 border border-border dark:border-white/10 text-muted-foreground text-[11px] font-mono uppercase tracking-[0.2em] font-semibold mb-4">
               MULTI-AGENT PROTOCOL
             </div>
 
@@ -109,7 +108,7 @@ explain how term increments prevent split-brain?"
             </h2>
 
             <p className="mt-4 text-sm sm:text-base text-muted-foreground font-body leading-relaxed font-normal">
-              Complex domains require immutable structural guarantees. Roadmap.ai deploys autonomous multi-agent pipelines that execute sequentially to eliminate speculative filler and guarantee verifiable, first-principles mastery.
+              Complex domains require immutable structural guarantees. Daari deploys autonomous multi-agent pipelines that execute sequentially to eliminate speculative filler and guarantee verifiable, first-principles mastery.
             </p>
           </div>
 
@@ -216,10 +215,7 @@ explain how term increments prevent split-brain?"
                 <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent" />
                 <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between text-[11px] font-mono text-white/90">
                   <span className="px-2.5 py-0.5 rounded bg-black/70 backdrop-blur-md border border-white/20 uppercase tracking-widest text-[10px] text-white">
-                    ARTIFACT // PHASE {step.phase}
-                  </span>
-                  <span className="text-white/60 font-mono text-[10px] hidden sm:inline tracking-wider">
-                    OCTANE RENDER • 8K
+                    ARTIFACT: PHASE {step.phase}
                   </span>
                 </div>
               </div>

@@ -8,7 +8,7 @@ import { ArrowRight, Terminal, Sparkles, Layers } from '@/components/ui/icons';
 
 const AGENTS = [
   {
-    tag: 'AGENT-01 // ARCHITECT',
+    tag: 'AGENT 01: ARCHITECT',
     title: 'Chronological Day Decomposer',
     subtitle: 'First-Principles Domain Invariants',
     description:
@@ -25,7 +25,7 @@ const AGENTS = [
     badgeVariant: 'orange' as const,
   },
   {
-    tag: 'AGENT-02 // STRUCTURE',
+    tag: 'AGENT 02: STRUCTURE',
     title: 'Minute-Budgeted DAG Synthesizer',
     subtitle: 'Mathematical Time Allocation',
     description:
@@ -42,7 +42,7 @@ const AGENTS = [
     badgeVariant: 'emerald' as const,
   },
   {
-    tag: 'AGENT-03 // TEACHER',
+    tag: 'AGENT 03: TEACHER',
     title: 'Socratic Masterclass Evaluator',
     subtitle: 'Reproducible Diagnostic Mastery',
     description:
@@ -66,18 +66,17 @@ export function HorizontalAgentShowcase() {
       {/* Section Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12 pb-6 border-b border-border">
         <div>
-          <div className="inline-flex items-center gap-2 mb-2">
-            <span className="size-2 rounded-full bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.8)]" />
+          <div className="inline-flex items-center mb-2">
             <span className="text-[11px] font-semibold tracking-[0.2em] uppercase text-muted-foreground font-mono">
-              TELEMETRY & ENGINE BENCHMARKS
+              SYSTEM ARCHITECTURE
             </span>
           </div>
           <h2 className="text-3xl sm:text-4xl md:text-5xl font-black tracking-[-0.03em] text-foreground font-display">
-            The Multi-Agent Syndicate Engine<span className="text-orange-500">.</span>
+            Multi-Agent Architecture
           </h2>
         </div>
         <p className="text-xs sm:text-sm text-muted-foreground font-mono max-w-md leading-relaxed">
-          Autonomous multi-agent pipeline designed to maximize comprehension velocity while ensuring reproducible mastery.
+          Modular multi-agent system designed for focused learning and structured mastery.
         </p>
       </div>
 

@@ -11,6 +11,7 @@ import React, {
 } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useLenis } from "@/components/smooth-scroll";
+import { markInternalNavigation } from "@/lib/navigation-tracker";
 
 interface PageTransitionContextType {
   transitionTo: (url: string) => void;
@@ -62,6 +63,7 @@ export function PageTransition({ children }: PageTransitionProps) {
         }
 
         isNavigatingRef.current = true;
+        markInternalNavigation();
         setStage("exiting");
 
         // Wait 190ms for the blur-out animation, then push route
@@ -158,11 +160,15 @@ export function PageTransition({ children }: PageTransitionProps) {
         clearTimeout(transitionTimerRef.current);
       }
 
-      // Reset scroll smoothly to top
-      if (lenis) {
-        lenis.scrollTo(0, { immediate: true });
-      } else {
-        window.scrollTo(0, 0);
+      // Reset scroll to top only if there is no target hash anchor
+      const storedAnchor = typeof window !== "undefined" ? sessionStorage.getItem("roadmap_target_anchor") : null;
+      const hasHash = (typeof window !== "undefined" && Boolean(window.location.hash)) || Boolean(storedAnchor);
+      if (!hasHash) {
+        if (lenis) {
+          lenis.scrollTo(0, { immediate: true });
+        } else {
+          window.scrollTo(0, 0);
+        }
       }
 
       // Set initial entering blurred state
@@ -183,6 +189,7 @@ export function PageTransition({ children }: PageTransitionProps) {
   // Popstate (browser back/forward button) support
   useEffect(() => {
     const handlePopState = () => {
+      markInternalNavigation();
       setStage("entering");
       requestAnimationFrame(() => {
         setTimeout(() => setStage("idle"), 20);

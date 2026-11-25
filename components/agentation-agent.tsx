@@ -121,7 +121,7 @@ export function AgentationAgent() {
     <div className="agentation-workflow-wrapper z-[999999] relative pointer-events-auto">
       <Agentation
         key={activeRouteKey}
-        appName="Roadmap.ai"
+        appName="Daari"
         useHashLocation={true}
         enableKeyboardShortcuts={true}
         onAnnotationDelete={(annotation) => {

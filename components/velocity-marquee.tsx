@@ -91,7 +91,7 @@ export function VelocityMarquee({
               >
                 {item}
               </span>
-              <span className="size-2 rounded-full bg-orange-500/80 shadow-[0_0_8px_rgba(249,115,22,0.8)] shrink-0" />
+              <span className="text-muted-foreground/30 font-light select-none text-xl sm:text-3xl shrink-0">/</span>
             </div>
           );
         })}

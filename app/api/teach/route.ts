@@ -130,39 +130,6 @@ export async function POST(req: NextRequest) {
     const level = (skillLevel || "intermediate").toLowerCase();
     const minutes = Number(estimatedMinutes) || Math.round((hours * 60) / 3);
 
-    // 1. Try FastAPI Python backend if running on port 8000
-    try {
-      const backendRes = await fetch(`http://localhost:8000/api/v1/roadmap/topic/${topicId}/teach`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          topic_id: topicId,
-          topic_title: cleanTitle,
-          domain_context: cleanDomain,
-          topic_desc: topicDesc,
-          daily_hours: hours,
-          estimated_minutes: minutes,
-          skill_level: level,
-          day_number: dayNumber,
-          total_days: totalDays,
-        }),
-        signal: AbortSignal.timeout(1500),
-      });
-      if (backendRes.ok) {
-        const backendLesson = await backendRes.json();
-        const isGenericBackend =
-          !backendLesson.content_markdown ||
-          backendLesson.content_markdown.includes("In this institutional module on") ||
-          backendLesson.content_markdown.includes("Foundational Invariants: Rather than treating") ||
-          backendLesson.content_markdown.includes("Pre-Execution Audit: Enumerate all initial");
-        if (backendLesson && backendLesson.content_markdown && !isGenericBackend) {
-          return NextResponse.json(backendLesson);
-        }
-      }
-    } catch {
-      // Backend not running or generic, proceed to direct LLM cascade
-    }
-
     // Detect domain discipline to tailor teacher persona, diagrams, and drills
     const lowerDomain = `${cleanDomain} ${cleanTitle}`.toLowerCase();
     const isGaming = /bgmi|battlegrounds|pubg|valorant|csgo|cs:go|counter-strike|fortnite|apex|cod|call of duty|warzone|league of legends|lol|dota|overwatch|rocket league|r6|rainbow six|gaming|gameplay|fps|battle royale|moba|chess|speedrun/i.test(lowerDomain);
@@ -217,27 +184,46 @@ PERSONA & PEDAGOGY: You are a world-class educator and master practitioner in ${
 Teach "${cleanTitle}" with deep authenticity, practical methodology, real-world examples, and actionable exercises tailored directly to this field.`;
     }
 
-    // Calibrate pedagogical progression and volume pacing
+    // Calibrate pedagogical progression and volume pacing strictly calibrated to allocated time
+    const effectiveMinutes = minutes > 0 ? minutes : Math.round((hours * 60) / 3);
+
     let volumePacingPrompt = "";
-    if (hours <= 1.0 || minutes <= 25) {
+    if (effectiveMinutes >= 75 || hours >= 4.0) {
       volumePacingPrompt = `
-ALLOCATED STUDY TIME: ${minutes} minutes (User Daily Commitment: ${hours} hr/day - FOCUSED / HIGH-EFFICIENCY TRACK).
-CRITICAL LENGTH & PACING DIRECTIVE: Target a concise, high-signal lesson of approximately 700 to 1,000 words:
-- Deliver clear intuition, 1 clean rounded Mermaid diagram, 3 core practical rules, 1 focused practical drill/exercise, and 1 critical blunder to avoid.
-- Maximize signal-to-noise: eliminate redundant filler prose.`;
-    } else if (hours <= 3.0 || minutes <= 55) {
+ALLOCATED STUDY TIME: ${effectiveMinutes} MINUTES (EXTENDED INTENSIVE MASTERCLASS - ${hours} HRS/DAY COMMITMENT).
+CRITICAL LENGTH & VOLUME DIRECTIVE: Deliver an exhaustive, definitive masterclass of 3,200 to 4,800+ words.
+This module is allocated ${effectiveMinutes} minutes of intensive study. A brief or summarized overview is strictly unacceptable.
+You MUST provide full depth across every section:
+- SECTION 1 (FIRST PRINCIPLES & GOVERNING DYNAMICS): Thorough theoretical grounding (at least 500-700 words), formal definitions, core invariants, and a detailed Markdown comparative trade-off table.
+- SECTION 2 (SYSTEMATIC ARCHITECTURE & MULTI-STAGE PIPELINE): Detailed narrative deconstruction (at least 800-1,200 words) breaking down the end-to-end operational lifecycle.
+  * MANDATORY MERMAID DIAGRAM: Comprehensive flowchart (\`\`\`mermaid\ngraph TD\n...\`\`\`) with at least 3 subgraphs, rounded nodes (NodeID("Label")), data flow links, and error feedback loops.
+  * STEP-BY-STEP METHODOLOGY: 5 to 6 chronologically ordered execution stages with exact parameters, thresholds, and form cues.
+- SECTION 3 (HIGH-PRESSURE FAILURE MODES & INDUSTRIAL CASE STUDIES): Detail 3 to 4 realistic high-pressure failure scenarios (at least 600-800 words). For each, specify: Context, Underlying Root Cause, Concrete Step-by-Step Recovery Protocol, and Preventative Checklist.
+- SECTION 4 (PRODUCTION-GRADE DRILLS & EXECUTION BLUEPRINTS): Full, unabridged practical implementation (or multi-phase deliberate practice drills) with exact instructions, benchmarks, and stage criteria.
+- SECTION 5 (SOCRATIC DIAGNOSTIC & ADVANCED MASTERY PROBES): 3 to 4 rigorous scenario questions probing edge cases and non-obvious failure modes.`;
+    } else if (effectiveMinutes >= 45 || hours >= 2.5) {
       volumePacingPrompt = `
-ALLOCATED STUDY TIME: ${minutes} minutes (User Daily Commitment: ${hours} hrs/day - BALANCED / THOROUGH TRACK).
-CRITICAL LENGTH & PACING DIRECTIVE: Target a comprehensive, well-paced explanation of approximately 1,500 to 2,200 words calibrated for a ${minutes}-minute deep study block:
-- Balance solid conceptual intuition, a multi-stage rounded Mermaid diagram with subgraphs, step-by-step operational mechanics, 2 practical failure modes with mitigations, a complete practical drill/execution guide, and Socratic diagnostic questions.`;
+ALLOCATED STUDY TIME: ${effectiveMinutes} MINUTES (DEEP MASTERCLASS TRACK - ${hours} HRS/DAY COMMITMENT).
+CRITICAL LENGTH & VOLUME DIRECTIVE: Deliver a thorough, comprehensive educational module of 2,400 to 3,400 words calibrated for a ${effectiveMinutes}-minute dedicated study block:
+A brief or surface-level overview is strictly unacceptable.
+- SECTION 1 (CONCEPTUAL ANCHOR & MENTAL MODEL): Deep first-principles intuition (at least 400-600 words) explaining the foundational mechanics before moving to practice.
+- SECTION 2 (SYSTEMATIC WORKFLOW & DEEP MECHANICS): Step-by-step operational mechanics (at least 700-1,000 words).
+  * MANDATORY MERMAID DIAGRAM: Rounded-node flowchart (\`\`\`mermaid\ngraph TD\n...\`\`\`) with 2+ subgraphs showing the full execution lifecycle and verification gates.
+  * Detailed 4 to 5 stage execution checklist with exact parameters and operational cues.
+- SECTION 3 (FAILURE MODES & RECOVERY RUNBOOK): 3 distinct failure traps with context, root causes, and corrective protocols.
+- SECTION 4 (PRACTICAL DELIBERATE PRACTICE DRILLS / CODE): Complete, production-grade drill routines or working code with comments.
+- SECTION 5 (SOCRATIC DIAGNOSTICS): 3 scenario-based questions testing deep understanding.`;
+    } else if (effectiveMinutes >= 25) {
+      volumePacingPrompt = `
+ALLOCATED STUDY TIME: ${effectiveMinutes} MINUTES (BALANCED & THOROUGH STUDY TRACK).
+CRITICAL LENGTH & VOLUME DIRECTIVE: Deliver an in-depth, structured explanation of 1,800 to 2,500 words calibrated for a ${effectiveMinutes}-minute study block:
+- Deliver solid conceptual intuition, a multi-stage rounded Mermaid diagram with subgraphs, step-by-step operational mechanics (3 to 4 phases), 2-3 realistic failure modes with mitigations, a complete practical drill/execution guide, and Socratic diagnostic questions.
+- Maintain substantial explanatory paragraphs under each heading.`;
     } else {
       volumePacingPrompt = `
-ALLOCATED STUDY TIME: ${minutes} minutes (User Daily Commitment: ${hours} hrs/day - INTENSIVE / MASTERCLASS TRACK).
-CRITICAL LENGTH & PACING DIRECTIVE: Deliver an exhaustive masterclass module of 2,600 to 3,800 words:
-- Dive deep into first principles, governing dynamics, and systematic nuances.
-- Provide an elaborate multi-stage rounded Mermaid diagram and execution blueprints.
-- Include 3+ realistic high-pressure failure scenarios with root causes and corrective protocols.
-- Provide comprehensive practical drills, training protocols, and diagnostic proof checkpoints.`;
+ALLOCATED STUDY TIME: ${effectiveMinutes} MINUTES (FOCUSED HIGH-EFFICIENCY SPRINT TRACK).
+CRITICAL LENGTH & VOLUME DIRECTIVE: Deliver a substantive, high-signal tutorial of 1,200 to 1,600 words:
+- Provide clear first-principles intuition, a clean rounded Mermaid flowchart, step-by-step execution rules, 1-2 critical pitfalls with corrective actions, 1 focused practical drill, and 2 diagnostic self-check questions.`;
     }
 
     let learnerLevelPrompt = "";
@@ -257,11 +243,11 @@ LEARNER EXPERIENCE LEVEL: INTERMEDIATE
 - PEDAGOGICAL FLOW: Assume baseline domain familiarity. Move smoothly from a quick refresher of "${cleanTitle}" into core mechanics, practical workflows, and real-world execution trade-offs.`;
     }
 
-    // 2. Direct Google Gemini LLM Cascade
+    // 1. Google Gemini LLM cascade
     const googleApiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
     if (googleApiKey && !googleApiKey.startsWith("your-")) {
       try {
-        const prompt = `You are Agent 3: Daily Teacher Agent for Roadmap.ai, an institutional adaptive learning engine.
+        const prompt = `You are Agent 3: Daily Teacher Agent for Daari, an institutional adaptive learning engine.
 Deliver an adaptive educational module for:
 Subject Domain: "${cleanDomain}"
 Specific Topic: "${cleanTitle}"
@@ -327,14 +313,13 @@ Return ONLY a valid JSON object matching this exact TypeScript structure:
 In JSON string values, avoid unescaped internal double quotes (use single quotes 'example' or escape with \\") to preserve JSON integrity.`;
 
         const candidateModels = [
-          process.env.GEMINI_MODEL || "gemini-flash-lite-latest",
-          "gemini-flash-lite-latest",
-          "gemini-3.1-flash-lite",
-          "gemini-3.5-flash-lite",
-          "gemini-3.1-flash-lite-preview",
-          "gemini-3.8-flash",
+          process.env.GEMINI_MODEL || "gemini-2.5-flash",
+          "gemini-2.5-flash",
           "gemini-flash-latest",
+          "gemini-flash-lite-latest",
+          "gemini-2.5-flash-lite",
           "gemini-3.5-flash",
+          "gemini-3.1-flash-lite",
           "gemini-3-flash-preview",
         ];
         const uniqueModels = Array.from(new Set(candidateModels));
@@ -388,7 +373,7 @@ In JSON string values, avoid unescaped internal double quotes (use single quotes
       }
     }
 
-    // 3. Fallback: High-Fidelity Domain & Topic Knowledge Engine
+    // 2. Fallback: High-Fidelity Domain & Topic Knowledge Engine
     const researched = synthesizeResearchedLesson(cleanTitle, cleanDomain, topicDesc, topicId, {
       skillLevel: level,
       dailyHours: hours,

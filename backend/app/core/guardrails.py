@@ -1,5 +1,5 @@
 from typing import Dict, Any
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from fastapi import HTTPException, status
 from app.core.config import settings
 from app.services.db import get_supabase_admin
@@ -38,10 +38,27 @@ def check_user_token_budget(user_id: str, estimated_tokens: int = 2000) -> bool:
         used = budget.get("tokens_used_current_cycle", 0)
         max_tokens = budget.get("max_tokens_monthly", settings.DEFAULT_MONTHLY_TOKEN_BUDGET)
         
+        # Check if billing cycle has expired and perform automatic rollover
+        cycle_resets_at_str = budget.get("cycle_resets_at")
+        if cycle_resets_at_str:
+            try:
+                cycle_resets_at = datetime.fromisoformat(cycle_resets_at_str.replace("Z", "+00:00"))
+                now_utc = datetime.now(timezone.utc)
+                if now_utc >= cycle_resets_at:
+                    new_reset_iso = (now_utc + timedelta(days=30)).isoformat()
+                    supabase.table("token_budgets").update({
+                        "tokens_used_current_cycle": 0,
+                        "cycle_resets_at": new_reset_iso,
+                        "updated_at": now_utc.isoformat()
+                    }).eq("user_id", user_id).execute()
+                    used = 0
+            except Exception as e:
+                print(f"[Guardrails] Cycle rollover notice: {e}")
+
         if used + estimated_tokens > max_tokens:
             raise HTTPException(
                 status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                detail="Monthly AI learning token budget exhausted. Please upgrade to Pro."
+                detail=f"Monthly AI learning token budget exhausted ({used} / {max_tokens} tokens). Please upgrade to Pro."
             )
         return True
     except HTTPException:

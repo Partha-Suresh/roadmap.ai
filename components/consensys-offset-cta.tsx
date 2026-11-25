@@ -13,7 +13,7 @@ interface ConsensysOffsetCtaProps {
 export function ConsensysOffsetCta({ onOpenModal, onSelectTrack }: ConsensysOffsetCtaProps) {
   const [copied, setCopied] = useState(false);
 
-  const curlCommand = `curl -X POST https://roadmap.ai/api/v1/trajectories \\
+  const curlCommand = `curl -X POST https://your-domain.com/api/v1/trajectories \\
   -H "Authorization: Bearer rm_live_token" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -40,9 +40,8 @@ export function ConsensysOffsetCta({ onOpenModal, onSelectTrack }: ConsensysOffs
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-center">
           {/* Left Column: Vision Headline & Action */}
           <div className="lg:col-span-7 space-y-8">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-lime-500/10 border border-lime-500/20 text-lime-700 dark:text-[#d4f934] text-[11px] font-mono uppercase tracking-[0.2em] font-semibold">
-              <span className="size-1.5 rounded-full bg-lime-600 dark:bg-[#d4f934] animate-pulse" />
-              PRODUCTION ENGINE // COGNITIVE VELOCITY
+            <div className="inline-flex items-center px-3 py-1 rounded-full bg-lime-500/10 border border-lime-500/20 text-lime-700 dark:text-[#d4f934] text-[11px] font-mono uppercase tracking-[0.2em] font-semibold">
+              ENGINEERED COGNITION
             </div>
 
             <h2 className="text-3xl sm:text-5xl lg:text-6xl font-black tracking-[-0.04em] text-foreground uppercase leading-[1.05] font-display">
@@ -51,7 +50,7 @@ export function ConsensysOffsetCta({ onOpenModal, onSelectTrack }: ConsensysOffs
 
             <p className="text-sm sm:text-base text-muted-foreground font-mono leading-relaxed max-w-xl">
               Consensys builds infrastructure that makes decentralized protocols deterministic.
-              Roadmap.ai deploys the exact same engineering discipline to your cognition. No fluff, no hand-waving,
+              Daari deploys the exact same engineering discipline to your cognition. No fluff, no hand-waving,
               no guesswork—just mathematically verified curriculum execution.
             </p>
 
@@ -135,9 +134,8 @@ export function ConsensysOffsetCta({ onOpenModal, onSelectTrack }: ConsensysOffs
               </pre>
 
               <div className="mt-4 pt-3 border-t border-border dark:border-white/10 flex items-center justify-between text-[10px] font-mono text-muted-foreground">
-                <span className="flex items-center gap-1.5">
-                  <span className="size-1.5 rounded-full bg-emerald-500 animate-ping" />
-                  DAEMON ONLINE
+                <span className="flex items-center">
+                  RUNTIME ACTIVE
                 </span>
                 <span className="text-lime-700 dark:text-[#d4f934] font-semibold">HTTP/2 200 OK</span>
               </div>

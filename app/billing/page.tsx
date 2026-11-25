@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ShieldCheck, Check, Sparkles, ArrowRight, Loader2, BookOpen, Layers, Terminal } from "@/components/ui/icons";
+import { markInternalNavigation } from "@/lib/navigation-tracker";
 
 export default function BillingPage() {
   const router = useRouter();
@@ -118,6 +119,9 @@ export default function BillingPage() {
         <div className="mb-8">
           <Link
             href="/"
+            onClick={() => {
+              markInternalNavigation();
+            }}
             className="text-xs font-mono text-muted-foreground hover:text-foreground transition-colors mb-2 inline-flex items-center gap-1.5 cursor-pointer"
           >
             ← Return to Home
@@ -200,35 +204,26 @@ export default function BillingPage() {
               </div>
             </div>
 
-            {/* Dynamic Multi-Agent Telemetry Breakdown */}
+            {/* Dynamic Multi-Agent Breakdown */}
             <div className="pt-2 border-t border-border">
               <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest block mb-2 font-semibold">
-                Agent Inference Breakdown (PostgreSQL Telemetry)
+                Agent Inference Breakdown
               </span>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <div className="p-2.5 rounded-lg border border-orange-500/20 bg-orange-500/5 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="size-2 rounded-full bg-orange-500" />
-                    <span className="text-xs font-mono font-medium text-foreground">Agent 1 (Architect)</span>
-                  </div>
+                  <span className="text-xs font-mono font-medium text-foreground">Agent 1 (Architect)</span>
                   <span className="text-xs font-mono font-bold text-orange-600 dark:text-orange-400">
                     {(subscription.agentBreakdown?.agent1 || 18400).toLocaleString()}
                   </span>
                 </div>
                 <div className="p-2.5 rounded-lg border border-cyan-500/20 bg-cyan-500/5 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="size-2 rounded-full bg-cyan-500" />
-                    <span className="text-xs font-mono font-medium text-foreground">Agent 2 (Sequencer)</span>
-                  </div>
+                  <span className="text-xs font-mono font-medium text-foreground">Agent 2 (Sequencer)</span>
                   <span className="text-xs font-mono font-bold text-cyan-600 dark:text-cyan-400">
                     {(subscription.agentBreakdown?.agent2 || 9200).toLocaleString()}
                   </span>
                 </div>
                 <div className="p-2.5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="size-2 rounded-full bg-emerald-500" />
-                    <span className="text-xs font-mono font-medium text-foreground">Agent 3 (Teacher)</span>
-                  </div>
+                  <span className="text-xs font-mono font-medium text-foreground">Agent 3 (Teacher)</span>
                   <span className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400">
                     {(subscription.agentBreakdown?.agent3 || 6900).toLocaleString()}
                   </span>
@@ -362,7 +357,7 @@ export default function BillingPage() {
 
       {/* Footer */}
       <footer className="w-full py-6 text-center text-[11px] font-mono text-muted-foreground border-t border-border">
-        ROADMAP.AI ALLOCATION ENGINE · INSTITUTIONAL FIDUCIARY STANDARDS
+        DAARI ALLOCATION ENGINE · INSTITUTIONAL FIDUCIARY STANDARDS
       </footer>
     </div>
   );

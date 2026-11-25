@@ -2,12 +2,14 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter, usePathname } from "next/navigation";
 import { ArrowUpRight, Plus } from "@/components/ui/icons";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { createClient } from "@/lib/supabase/client";
 import { usePageTransition } from "@/components/page-transition";
 import { useLenis } from "@/components/smooth-scroll";
+import { isInternalNavigation, markInternalNavigation } from "@/lib/navigation-tracker";
 
 export interface NavbarProps {
   currentUser?: any;
@@ -26,6 +28,52 @@ export function Navbar({
   const lenis = useLenis();
   const supabase = createClient();
   const [internalUser, setInternalUser] = useState<any>(propsUser ?? null);
+  const [overDarkHero, setOverDarkHero] = useState(false);
+
+  // The home hero is dark in both themes. While the navigation sits on it, use the
+  // dark-theme styling so the boxes contrast with what is behind them.
+  useEffect(() => {
+    if (pathname !== "/") return;
+    const update = () => {
+      const hero = document.getElementById("cockpit");
+      if (!hero) return;
+      // The picture fades out below the hero; switch partway through the fade
+      const fade = hero.nextElementSibling?.getBoundingClientRect().height ?? 0;
+      setOverDarkHero(hero.getBoundingClientRect().bottom + fade * 0.35 > 60);
+    };
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, [pathname]);
+  const invertNav = pathname === "/" && overDarkHero;
+
+  const [navVisible, setNavVisible] = useState(() => {
+    if (pathname !== "/") return true;
+    if (isInternalNavigation()) return true;
+    return false;
+  });
+
+  useEffect(() => {
+    if (pathname !== "/" || isInternalNavigation()) {
+      setNavVisible(true);
+      return;
+    }
+
+    const handleReveal = () => setNavVisible(true);
+    const handleReplay = () => setNavVisible(false);
+
+    window.addEventListener("roadmap-reveal-start", handleReveal);
+    window.addEventListener("roadmap-replay-site-intro", handleReplay);
+
+    return () => {
+      window.removeEventListener("roadmap-reveal-start", handleReveal);
+      window.removeEventListener("roadmap-replay-site-intro", handleReplay);
+    };
+  }, [pathname]);
 
   const handleBrandClick = (e: React.MouseEvent) => {
     if (pathname === "/") {
@@ -40,25 +88,46 @@ export function Navbar({
       }
     } else {
       e.preventDefault();
+      markInternalNavigation();
       transitionTo("/");
     }
   };
 
   const handleCurriculaClick = (e: React.MouseEvent) => {
+    e.preventDefault();
     if (pathname === "/") {
-      e.preventDefault();
       const portfolio = document.getElementById("portfolio");
       if (portfolio) {
         if (lenis) {
-          lenis.scrollTo(portfolio, { offset: -60, duration: 1.2 });
+          lenis.scrollTo(portfolio, { offset: -60, duration: 1.0 });
         } else {
           portfolio.scrollIntoView({ behavior: "smooth" });
         }
         window.history.pushState(null, "", "/#portfolio");
       }
     } else {
-      e.preventDefault();
+      if (typeof window !== "undefined") {
+        try {
+          sessionStorage.setItem("roadmap_target_anchor", "portfolio");
+        } catch {
+          // non-fatal
+        }
+      }
       transitionTo("/#portfolio");
+    }
+  };
+
+  const handleQuotaClick = (e: React.MouseEvent) => {
+    if (pathname === "/billing") {
+      e.preventDefault();
+      if (lenis) {
+        lenis.scrollTo(0, { duration: 1.0 });
+      } else {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    } else {
+      e.preventDefault();
+      transitionTo("/billing");
     }
   };
 
@@ -98,8 +167,13 @@ export function Navbar({
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (isMounted) setInternalUser(session?.user ?? null);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("roadmap-auth-state-changed", { detail: { event, session } })
+        );
+      }
     });
 
     return () => {
@@ -116,6 +190,11 @@ export function Navbar({
     try {
       await supabase.auth.signOut();
       setInternalUser(null);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("roadmap-auth-state-changed", { detail: { event: "SIGNED_OUT" } })
+        );
+      }
       transitionTo("/");
       router.refresh();
     } catch (err) {
@@ -139,21 +218,19 @@ export function Navbar({
     transitionTo("/#cockpit");
   };
 
-  if (pathname?.startsWith("/classroom")) {
-    return null;
-  }
-
   const navItems = [
     { label: "Curricula", href: "/#portfolio" },
     { label: "Quota", href: "/billing" },
   ];
 
   return (
-    <>
+    <div className={invertNav ? "dark contents" : "contents"}>
       {/* Left Wing: Vertical formation sticking to the left (No horizontal dividing line) */}
       <nav
         aria-label="Primary Navigation"
-        className="fixed top-5 left-5 sm:top-6 sm:left-8 z-50 flex flex-col items-start gap-1.5 font-mono text-xs select-none pointer-events-auto"
+        className={`fixed top-5 left-5 sm:top-6 sm:left-8 z-50 flex flex-col items-start gap-1.5 font-mono text-xs select-none transition-opacity duration-700 ease-out ${
+          navVisible ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+        }`}
       >
         {/* Brandmark */}
         <Link
@@ -162,7 +239,7 @@ export function Navbar({
           className="inline-flex items-center justify-center h-8.5 px-3.5 rounded-lg bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 border border-zinc-950 dark:border-white shadow-sm hover:opacity-90 transition-all mb-0.5 select-none cursor-pointer"
         >
           <span className="text-sm font-black tracking-[-0.03em] font-display uppercase leading-none text-center">
-            ROADMAP<span className="text-orange-500 dark:text-orange-600 font-extrabold">.AI</span>
+            DAARI<span className="text-orange-500 dark:text-orange-600 font-extrabold">.</span>
           </span>
         </Link>
 
@@ -178,6 +255,7 @@ export function Navbar({
 
           <Link
             href="/billing"
+            onClick={handleQuotaClick}
             className="px-2.5 py-1 rounded-md bg-transparent hover:bg-foreground hover:text-background text-muted-foreground hover:text-background text-xs uppercase tracking-wider font-medium leading-tight transition-all cursor-pointer"
           >
             Quota
@@ -194,10 +272,46 @@ export function Navbar({
         </div>
       </nav>
 
+      {/* Center Crest: Top Center Iconic Logo */}
+      <div
+        className={`fixed top-5 sm:top-6 left-1/2 -translate-x-1/2 z-50 flex items-center justify-center select-none pointer-events-auto transition-opacity duration-300 ${
+          navVisible ? "opacity-100" : "opacity-0"
+        }`}
+      >
+        <Link
+          href="/"
+          onClick={handleBrandClick}
+          className="flex items-center justify-center size-8 sm:size-9 rounded-xl hover:opacity-80 active:scale-95 transition-all cursor-pointer group"
+          aria-label="Home"
+          title="Return to Home"
+        >
+          {/* Light mode: black icon */}
+          <Image
+            src="/images/logo-light.png"
+            alt="Site Logo"
+            width={36}
+            height={36}
+            className="size-7 sm:size-8 object-contain block dark:hidden transition-transform duration-200 group-hover:scale-105"
+            priority
+          />
+          {/* Dark mode: white icon */}
+          <Image
+            src="/images/logo-dark.png"
+            alt="Site Logo"
+            width={36}
+            height={36}
+            className="size-7 sm:size-8 object-contain hidden dark:block transition-transform duration-200 group-hover:scale-105"
+            priority
+          />
+        </Link>
+      </div>
+
       {/* Right Wing: Vertical formation sticking to the right (Identical structure to Left Wing) */}
       <nav
         aria-label="User Actions"
-        className="fixed top-5 right-5 sm:top-6 sm:right-8 z-50 flex flex-col items-end gap-1.5 font-mono text-xs select-none pointer-events-auto"
+        className={`fixed top-5 right-5 sm:top-6 sm:right-8 z-50 flex flex-col items-end gap-1.5 font-mono text-xs select-none transition-opacity duration-700 ease-out ${
+          navVisible ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+        }`}
       >
         {/* Studio Pill */}
         <Link
@@ -213,6 +327,16 @@ export function Navbar({
 
         {/* Small Navigation Buttons Listed in Vertical Formation */}
         <div className="flex flex-col items-end gap-1 font-body">
+          <Link
+            href="/about"
+            aria-current={pathname === "/about" ? "page" : undefined}
+            className={`px-2.5 py-1 rounded-md bg-transparent hover:bg-foreground hover:text-background text-xs uppercase tracking-wider font-medium leading-tight transition-all cursor-pointer ${
+              pathname === "/about" ? "text-orange-600 dark:text-orange-400" : "text-muted-foreground"
+            }`}
+          >
+            About
+          </Link>
+
           {internalUser ? (
             <button
               type="button"
@@ -234,7 +358,7 @@ export function Navbar({
           <ThemeToggle variant="pill" />
         </div>
       </nav>
-    </>
+    </div>
   );
 }
 

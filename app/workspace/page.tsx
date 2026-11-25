@@ -11,9 +11,12 @@ import {
   generateDomainLesson,
   getDomainTopicsForDay,
   generateDomainDays,
+  buildSampleDays,
   updateTopicStatusInSupabase,
   RoadmapSummary,
+  TokenQuotaExceededError,
 } from "@/lib/supabase-roadmap";
+import { showTelemetryToast } from "@/components/ui/telemetry-toast";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,6 +45,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from "@/components/ui/icons";
+import { RoadmapRail } from "@/components/roadmap-rail";
 import { MasterclassViewer } from "@/components/masterclass-viewer";
 
 interface Topic {
@@ -75,6 +79,7 @@ function WorkspaceContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryRoadmapId = searchParams.get("id");
+  const queryTopicId = searchParams.get("topic");
   const queryDomain = searchParams.get("domain");
   const queryDays = searchParams.get("days");
   const queryHours = searchParams.get("hours");
@@ -123,21 +128,25 @@ function WorkspaceContent() {
   }, [trajectoryDropdownOpen]);
 
   // Masterclass reading text zoom percentage (default: 100%, range: 85% - 160%)
-  const [textZoom, setTextZoom] = useState<number>(() => {
-    if (typeof window !== "undefined") {
+  const [textZoom, setTextZoom] = useState<number>(100);
+
+  // Sync saved zoom preference from localStorage after client hydration
+  useEffect(() => {
+    try {
       const saved = localStorage.getItem("roadmap_text_zoom");
       if (saved) {
         const parsed = parseInt(saved, 10);
-        if (!isNaN(parsed) && parsed >= 85 && parsed <= 160) return parsed;
+        if (!isNaN(parsed) && parsed >= 85 && parsed <= 160) {
+          setTextZoom(parsed);
+        }
       }
-    }
-    return 100;
-  });
+    } catch {}
+  }, []);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
+    try {
       localStorage.setItem("roadmap_text_zoom", textZoom.toString());
-    }
+    } catch {}
   }, [textZoom]);
 
   // 1. Initialize user and roadmap
@@ -187,8 +196,32 @@ function WorkspaceContent() {
     }
 
     initWorkspace();
-    return () => { isMounted = false; };
-  }, [queryRoadmapId, queryDomain, queryDays, queryHours]);
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!isMounted) return;
+      if (event === "SIGNED_OUT" || !session?.user) {
+        router.push(`/login?redirectedFrom=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+      }
+    });
+
+    const handleAuthEvent = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (!isMounted) return;
+      if (customEvent.detail?.event === "SIGNED_OUT") {
+        router.push(`/login?redirectedFrom=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+      }
+    };
+
+    window.addEventListener("roadmap-auth-state-changed", handleAuthEvent);
+
+    return () => {
+      isMounted = false;
+      subscription?.unsubscribe();
+      window.removeEventListener("roadmap-auth-state-changed", handleAuthEvent);
+    };
+  }, [queryRoadmapId, queryTopicId, queryDomain, queryDays, queryHours, router, supabase]);
 
   function loadCustomDomainRoadmap(domain: string, totalDays: number = 7, dailyHours: number = 2.0) {
     const days = generateDomainDays(domain, totalDays);
@@ -296,41 +329,24 @@ function WorkspaceContent() {
     if (roadmapId.startsWith("demo-")) {
       const demoList = await getUserRoadmaps("guest");
       const matched = demoList.find((d) => d.id === roadmapId) || demoList[0];
-      const days = generateDomainDays(matched.domain_context, matched.total_days);
-      const mockDays: DayNode[] = days.map((d, idx) => ({
-        id: `${roadmapId}-day-${d.day_number}`,
-        day_number: d.day_number,
-        title: d.title,
-        description: d.description,
-        learning_objectives: d.learning_objectives,
-        status: idx === 0 ? "in_progress" : "not_started",
-        topics: getDomainTopicsForDay(matched.domain_context, matched.daily_hours_commitment, d.day_number, d.title, d.learning_objectives, d.description, matched.skill_level).map((t) => ({
-          id: `${roadmapId}-day-${d.day_number}-topic-${t.topic_number}`,
-          topic_number: t.topic_number,
-          title: t.title,
-          description: t.description,
-          estimated_minutes: t.estimated_minutes,
-          status: idx === 0 && t.topic_number === 1 ? "in_progress" : "not_started",
-        })),
-      }));
+      const mockDays: DayNode[] = buildSampleDays({ ...matched, id: roadmapId });
 
       setCurrentRoadmap(matched);
       setRoadmapDays(mockDays);
-      if (mockDays.length > 0) {
-        setSelectedDayId(mockDays[0].id);
-        if (mockDays[0].topics.length > 0) {
-          const firstT = mockDays[0].topics[0];
-          setSelectedTopicId(firstT.id);
-          fetchLesson(firstT.id, firstT.title, {
-            domainCtx: matched.domain_context,
-            topicDesc: firstT.description,
-            estimatedMinutes: firstT.estimated_minutes,
-            dailyHours: matched.daily_hours_commitment,
-            skillLevel: matched.skill_level,
-            dayNumber: mockDays[0].day_number,
-            totalDays: matched.total_days,
-          });
-        }
+      const startDay = mockDays.find((d) => d.topics.some((t) => t.id === queryTopicId)) ?? mockDays[0];
+      const startTopic = startDay?.topics.find((t) => t.id === queryTopicId) ?? startDay?.topics[0];
+      if (startDay && startTopic) {
+        setSelectedDayId(startDay.id);
+        setSelectedTopicId(startTopic.id);
+        fetchLesson(startTopic.id, startTopic.title, {
+          domainCtx: matched.domain_context,
+          topicDesc: startTopic.description,
+          estimatedMinutes: startTopic.estimated_minutes,
+          dailyHours: matched.daily_hours_commitment,
+          skillLevel: matched.skill_level,
+          dayNumber: startDay.day_number,
+          totalDays: matched.total_days,
+        });
       }
       return;
     }
@@ -355,6 +371,13 @@ function WorkspaceContent() {
                 }
               }
             }
+          }
+
+          // A link to a specific topic wins over resuming
+          const linkedDay = result.days.find((d) => d.topics?.some((t) => t.id === queryTopicId));
+          if (linkedDay) {
+            resumeDay = linkedDay;
+            resumeTopic = linkedDay.topics.find((t) => t.id === queryTopicId) ?? resumeTopic;
           }
 
           setSelectedDayId(resumeDay.id);
@@ -438,7 +461,19 @@ function WorkspaceContent() {
         lessonCacheRef.current[topicId] = lesson;
       }
       setCurrentLesson(lesson);
-    } catch (err) {
+    } catch (err: any) {
+      if (
+        err instanceof TokenQuotaExceededError ||
+        err?.name === "TokenQuotaExceededError" ||
+        err?.message?.toLowerCase().includes("token budget exhausted") ||
+        err?.message?.toLowerCase().includes("quota")
+      ) {
+        showTelemetryToast({
+          type: "error",
+          title: "ALLOCATION EXHAUSTED",
+          message: err.message || "Monthly reasoning token quota reached.",
+        });
+      }
       console.warn("Using offline fallback lesson:", err);
       const fallback = generateDomainLesson(topicId, topicTitle, domain, lessonOptions);
       setCurrentLesson(fallback);
@@ -504,9 +539,6 @@ function WorkspaceContent() {
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans relative overflow-x-hidden selection:bg-orange-500/30 selection:text-orange-950 dark:selection:text-orange-100 transition-colors duration-200">
-      {/* Background dot grid */}
-      <div className="pointer-events-none fixed inset-0 bg-dot-grid opacity-50 dark:opacity-40" />
-
       {/* Progressive Gradient Blur at Top of Studio - Seamlessly fades into clear content */}
       <div className="fixed top-0 inset-x-0 h-32 sm:h-36 pointer-events-none z-40 bg-gradient-to-b from-background via-background/70 to-transparent backdrop-blur-xl transition-all duration-300 [mask-image:linear-gradient(to_bottom,black_0%,black_35%,transparent_100%)] [-webkit-mask-image:linear-gradient(to_bottom,black_0%,black_35%,transparent_100%)]" />
 
@@ -634,93 +666,14 @@ function WorkspaceContent() {
               </span>
             </div>
 
-            {/* Scrollable Day Accordion pinned alongside masterclass */}
-            <div 
-              className="space-y-2.5 max-h-[calc(100vh-170px)] overflow-y-auto pr-1 scrollbar-thin"
-              data-lenis-prevent
-            >
-              {roadmapDays.map((day) => {
-                const isDaySelected = selectedDayId === day.id;
-                return (
-                  <Card
-                    key={day.id}
-                    className={`idle-card p-3 sm:p-3.5 transition-all duration-200 ${
-                      isDaySelected ? "ring-1 ring-orange-500/50 bg-card shadow-xs" : "hover:border-foreground/20"
-                    }`}
-                  >
-                    {/* Day Header */}
-                    <div
-                      onClick={() => {
-                        setSelectedDayId(day.id);
-                        if (day.topics && day.topics.length > 0) {
-                          handleSelectTopic(day.id, day.topics[0]);
-                        }
-                      }}
-                      className="cursor-pointer flex items-start justify-between gap-2.5"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <h3 className="text-xs sm:text-sm font-semibold text-foreground tracking-tight truncate">
-                          Day {day.day_number}: {day.title}
-                        </h3>
-                        <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">{day.description}</p>
-                      </div>
-
-                      <span className="text-[10px] font-mono text-muted-foreground shrink-0 mt-0.5 px-1.5 py-0.5 rounded bg-muted/50">
-                        {day.topics?.length || 0}
-                      </span>
-                    </div>
-
-                    {/* Topics List */}
-                    {isDaySelected && (
-                      <div className="mt-3 pt-2.5 border-t border-border space-y-1.5">
-                        {day.topics.map((topic) => {
-                          const isTopicActive = selectedTopicId === topic.id;
-                          const isCompleted = topic.status === "completed";
-
-                          return (
-                            <div
-                              key={topic.id}
-                              className={`p-2 rounded-lg transition-all flex items-center justify-between gap-2.5 ${
-                                isTopicActive
-                                  ? "bg-orange-500/10 border border-orange-500/30 text-foreground"
-                                  : "bg-muted/30 border border-border/50 text-muted-foreground hover:bg-muted/60"
-                              }`}
-                            >
-                              <div
-                                onClick={() => handleSelectTopic(day.id, topic)}
-                                className="flex-1 cursor-pointer min-w-0"
-                              >
-                                <span className="text-xs font-medium truncate block text-foreground">{topic.title}</span>
-                              </div>
-
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                <span className="text-[10px] font-mono text-muted-foreground">
-                                  {topic.estimated_minutes}m
-                                </span>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleToggleTopicCompleted(topic.id, day.id);
-                                  }}
-                                  title={isCompleted ? "Mark incomplete" : "Mark completed"}
-                                  className={`size-4.5 rounded flex items-center justify-center text-[10px] transition-all cursor-pointer ${
-                                    isCompleted
-                                      ? "bg-emerald-500 text-white font-bold"
-                                      : "border border-border hover:border-emerald-500 text-transparent"
-                                  }`}
-                                >
-                                  ✓
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </Card>
-                );
-              })}
-            </div>
+            <RoadmapRail
+              days={roadmapDays}
+              label={currentRoadmap?.title || "Roadmap"}
+              selectedTopicId={selectedTopicId}
+              onSelectTopic={(day, topic) => handleSelectTopic(day.id, topic)}
+              onToggleComplete={(day, topic) => handleToggleTopicCompleted(topic.id, day.id)}
+              className="max-h-[calc(100vh-190px)] overflow-y-auto pr-1 scrollbar-thin"
+            />
           </div>
 
           {/* Right Column: Agent 3 Masterclass Panel - Ultra-Wide (9 cols) */}
@@ -730,9 +683,8 @@ function WorkspaceContent() {
                 {/* Header Tabs */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-border gap-4">
                   <div className="flex items-center gap-2">
-                    <span className="size-2 rounded-full bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.8)]" />
                     <span className="text-[11px] font-semibold tracking-[0.18em] uppercase text-muted-foreground font-mono">
-                      AGENT 3 · MASTERCLASS PEDAGOGY
+                      AGENT 3: MASTERCLASS PEDAGOGY
                     </span>
                   </div>
 
@@ -759,6 +711,7 @@ function WorkspaceContent() {
 
                       <button
                         type="button"
+                        suppressHydrationWarning
                         onClick={() => setTextZoom(100)}
                         className="px-2 py-0.5 rounded-md text-[11px] font-bold text-foreground hover:bg-background/80 dark:hover:bg-white/10 transition-all cursor-pointer select-none"
                         title="Click to reset zoom to 100%"

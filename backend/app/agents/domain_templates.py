@@ -1,5 +1,5 @@
 """
-Domain Templates & Universal Adaptive Generators for Roadmap.ai
+Domain Templates & Universal Adaptive Generators for Daari
 Provides domain-aware curriculum generation when LLMs are rate-limited or offline,
 ensuring tailored roadmaps, subtopics, practical exercises/code, citations, and courses
 for ANY field of study across any duration (total_days) and daily commitment (daily_hours).

@@ -91,7 +91,7 @@ def run_daily_teacher_agent(
             )
 
         system_prompt = (
-            "You are the universal Daily Teacher Agent (Agent 3) for Roadmap.ai. "
+            "You are the universal Daily Teacher Agent (Agent 3) for Daari. "
             "Your mandate is to deliver an adaptive educational module calibrated to the user's committed time and experience level.\n\n"
             f"{discipline_directive}\n"
             f"LEARNER EXPERIENCE LEVEL: {level.upper()}\n"

@@ -415,7 +415,7 @@ function ArchitectureDiagram({
       </div>
 
       {/* Canvas Body */}
-      <div className="relative p-4 sm:p-5 bg-dot-grid overflow-x-auto min-h-[160px] flex items-center justify-center">
+      <div className="relative p-4 sm:p-5 bg-muted/10 overflow-x-auto min-h-[160px] flex items-center justify-center">
         {activeTab === "visual" && svgContent ? (
           <div 
             ref={containerRef}
@@ -598,11 +598,10 @@ export function MasterclassViewer({
         className="flex items-center justify-between flex-wrap gap-2 px-3.5 py-2 mb-5 rounded-xl border border-border/80 bg-muted/40 font-mono text-[11px] text-muted-foreground"
       >
         <div className="flex items-center gap-2">
-          <span className="size-2 rounded-full bg-orange-500 shrink-0" />
           <span className="font-semibold text-foreground capitalize">
             {skillLevel ? `${skillLevel} Track` : "Personalized Track"}
           </span>
-          <span>•</span>
+          <span className="text-muted-foreground/40">/</span>
           <span>
             {estimatedMinutes ? `⏱️ ~${estimatedMinutes} min study pace` : "Target study block"}
           </span>
@@ -862,7 +861,7 @@ export function MasterclassViewer({
               {listMatch[2]}
             </span>
           ) : (
-            <span className="size-1.5 rounded-full bg-orange-500 shrink-0 mt-2" />
+            <span className="size-1 rounded-full bg-foreground/50 shrink-0 mt-2.5" />
           )}
           <div className="flex-1">
             <TextWithMath text={bulletText} />

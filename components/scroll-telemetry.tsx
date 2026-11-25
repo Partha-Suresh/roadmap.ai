@@ -8,7 +8,8 @@ export function ScrollTelemetry() {
   const glowRef = useRef<HTMLDivElement>(null);
 
   useLenis((lenis) => {
-    const rawProgress = lenis.progress || 0;
+    // Lenis reports full progress when there is nothing to scroll
+    const rawProgress = lenis.limit > 0 ? lenis.progress || 0 : 0;
 
     // 1. Hardware-accelerated GPU transform (Sub-pixel, 120Hz/60Hz buttery smooth)
     if (barRef.current) {

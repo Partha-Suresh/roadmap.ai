@@ -1,5 +1,5 @@
 /**
- * Knowledge Engine & Pedagogical Research Synthesizer for Roadmap.ai
+ * Knowledge Engine & Pedagogical Research Synthesizer for Daari
  * Generates topic-specific, masterclass-grade lessons, concrete practical code drills,
  * authentic academic citations, and verified university courses for ANY topic or domain.
  */
@@ -724,8 +724,8 @@ export function synthesizeResearchedLesson(
   const hours = Number(options?.dailyHours) || 2.0;
   const level = (options?.skillLevel || "intermediate").toLowerCase();
   const minutes = Number(options?.estimatedMinutes) || Math.round((hours * 60) / 3);
-  const isLight = hours <= 1.0 || minutes <= 25;
-  const isIntensive = hours >= 3.5 || minutes >= 60;
+  const isLight = minutes < 25 && hours <= 1.0;
+  const isIntensive = minutes >= 40 || hours >= 2.5;
   const isBeginner = level.includes("beginner");
   const isAdvanced = level.includes("advanced") || level.includes("expert");
 

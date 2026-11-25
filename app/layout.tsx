@@ -6,10 +6,11 @@ import { PageTransition } from "@/components/page-transition";
 import { SmoothScroll } from "@/components/smooth-scroll";
 import { ScrollTelemetry } from "@/components/scroll-telemetry";
 import { TelemetryToastContainer } from "@/components/ui/telemetry-toast";
+import { QuotaExhaustedModal } from "@/components/quota-exhausted-modal";
 import { AgentationAgent } from "@/components/agentation-agent";
 
 export const metadata: Metadata = {
-  title: "Roadmap.ai | Autonomous Learning Syndicate",
+  title: "Daari | Autonomous Learning Syndicate",
   description: "Deterministic 3-agent pedagogical engine for mastering any discipline with high velocity and conviction.",
 };
 
@@ -37,6 +38,12 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `
               try {
+                if ('scrollRestoration' in history) {
+                  history.scrollRestoration = 'manual';
+                }
+                window.scrollTo(0, 0);
+              } catch (e) {}
+              try {
                 const storedTheme = localStorage.getItem('theme');
                 if (storedTheme === 'light') {
                   document.documentElement.classList.remove('dark');
@@ -54,6 +61,7 @@ export default function RootLayout({
           <Navbar />
           <PageTransition>
             {children}
+            <QuotaExhaustedModal />
           </PageTransition>
           <TelemetryToastContainer />
         </SmoothScroll>

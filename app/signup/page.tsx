@@ -186,7 +186,7 @@ function SignupContent() {
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="learner@apexkrishcapital.com"
+                    placeholder="you@example.com"
                     className="h-10 text-xs"
                   />
                 </div>
@@ -239,7 +239,7 @@ function SignupContent() {
 
       {/* Footer */}
       <footer className="w-full py-6 text-center text-[11px] font-mono text-muted-foreground">
-        ROADMAP.AI ARCHITECTURE · APEXKRISH COMPLIANCE STANDARD
+        © {new Date().getFullYear()} DAARI
       </footer>
     </div>
   );

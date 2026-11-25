@@ -562,7 +562,11 @@ export async function getUserRoadmaps(userId: string): Promise<RoadmapSummary[]>
 
     if (error || !roadmaps) {
       console.warn("getUserRoadmaps fallback notice:", error);
-      return [];
+      return getFeaturedDemoRoadmaps();
+    }
+
+    if (roadmaps.length === 0) {
+      return getFeaturedDemoRoadmaps();
     }
 
     return roadmaps.map((r: any) => {
@@ -767,6 +771,40 @@ export function getFeaturedDemoRoadmaps(): RoadmapSummary[] {
   ];
 }
 
+/** Days and topics for a built-in sample roadmap */
+export function buildSampleDays(roadmap: RoadmapSummary): SupabaseDay[] {
+  return generateDomainDays(roadmap.domain_context, roadmap.total_days).map((d, idx) => {
+    const dayId = `${roadmap.id}-day-${d.day_number}`;
+    return {
+      id: dayId,
+      roadmap_id: roadmap.id,
+      day_number: d.day_number,
+      title: d.title,
+      description: d.description,
+      learning_objectives: d.learning_objectives,
+      status: idx === 0 ? "in_progress" : "not_started",
+      topics: getDomainTopicsForDay(
+        roadmap.domain_context,
+        roadmap.daily_hours_commitment,
+        d.day_number,
+        d.title,
+        d.learning_objectives,
+        d.description,
+        roadmap.skill_level
+      ).map((t) => ({
+        id: `${dayId}-topic-${t.topic_number}`,
+        day_id: dayId,
+        roadmap_id: roadmap.id,
+        topic_number: t.topic_number,
+        title: t.title,
+        description: t.description,
+        estimated_minutes: t.estimated_minutes,
+        status: idx === 0 && t.topic_number === 1 ? "in_progress" : "not_started",
+      })),
+    };
+  });
+}
+
 export async function getUserActiveRoadmap(userId: string) {
   if (!userId || userId === "guest") return null;
 
@@ -848,6 +886,9 @@ export async function saveRoadmapToSupabase(
   dailyHours: number,
   skillLevel: string = "intermediate"
 ) {
+  // Pre-flight quota check: ensure user has quota for roadmap synthesis (~15,400 tokens)
+  await assertUserTokenBudget(userId, 15400);
+
   const supabase = createClient();
   const archetype = classifyDomain(domain);
 
@@ -950,7 +991,14 @@ export async function saveRoadmapToSupabase(
   const firstDay = insertedDays[0];
   const firstDayTopics = topicsByDay[firstDay.id] || [];
   if (firstDayTopics.length > 0) {
-    await getOrSaveLessonFromSupabase(firstDayTopics[0].id, firstDayTopics[0].title, domain, firstDayTopics[0].description);
+    await getOrSaveLessonFromSupabase(firstDayTopics[0].id, firstDayTopics[0].title, domain, {
+      topicDesc: firstDayTopics[0].description,
+      estimatedMinutes: firstDayTopics[0].estimated_minutes || 45,
+      dailyHours: roadmap.daily_hours_commitment || 2.0,
+      skillLevel: roadmap.skill_level || "intermediate",
+      dayNumber: 1,
+      totalDays: insertedDays.length,
+    });
   }
 
   // 5. Atomically log and consume tokens dynamically in Supabase
@@ -1134,6 +1182,7 @@ export async function getOrSaveLessonFromSupabase(
       const isOldGeneric =
         !existing.content_markdown ||
         existing.content_markdown.length < 250 ||
+        (options.estimatedMinutes && options.estimatedMinutes >= 45 && existing.content_markdown.length < 800) ||
         existing.content_markdown.includes("Pre-Flight Input Audit") ||
         existing.content_markdown.includes("Superficial Pattern Transfer") ||
         existing.content_markdown.includes("In this institutional module on") ||
@@ -1237,12 +1286,212 @@ export async function getOrSaveLessonFromSupabase(
   }
 }
 
+export class TokenQuotaExceededError extends Error {
+  currentUsed: number;
+  maxLimit: number;
+  resetDate: string;
+  tier: string;
+
+  constructor(
+    message: string,
+    currentUsed: number,
+    maxLimit: number,
+    resetDate: string = "Next Billing Cycle",
+    tier: string = "Starter Allocation"
+  ) {
+    super(message);
+    this.name = "TokenQuotaExceededError";
+    this.currentUsed = currentUsed;
+    this.maxLimit = maxLimit;
+    this.resetDate = resetDate;
+    this.tier = tier;
+  }
+}
+
+/**
+ * Validates that user has sufficient reasoning tokens remaining in their cycle.
+ * Also automatically checks and executes monthly billing cycle reset if cycle_resets_at has expired.
+ * Throws TokenQuotaExceededError and dispatches 'roadmap-token-quota-exceeded' if exhausted.
+ */
+export async function assertUserTokenBudget(
+  userId: string | undefined,
+  tokensNeeded: number = 1000
+): Promise<{
+  allowed: boolean;
+  currentUsed: number;
+  maxLimit: number;
+  remaining: number;
+  resetDate: string;
+  tier: string;
+}> {
+  // 1. Guest / Local Mode Check
+  if (!userId || userId === "guest" || userId.startsWith("guest-") || userId.startsWith("local-")) {
+    let guestUsed = 34500;
+    const guestLimit = 250000;
+    const now = new Date();
+    const fallbackResetDate = new Date(now.getFullYear(), now.getMonth() + 1, 1).toLocaleDateString("en-US", {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("roadmap_guest_tokens_used");
+      if (stored) {
+        guestUsed = parseInt(stored, 10);
+      }
+    }
+
+    if (guestUsed + tokensNeeded > guestLimit) {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("roadmap-token-quota-exceeded", {
+            detail: {
+              currentUsed: guestUsed,
+              maxLimit: guestLimit,
+              resetDate: fallbackResetDate,
+              tier: "Guest Preview",
+            },
+          })
+        );
+      }
+      throw new TokenQuotaExceededError(
+        `Monthly reasoning token budget exhausted (${guestUsed.toLocaleString()} / ${guestLimit.toLocaleString()} tokens). Please upgrade to Pro to continue.`,
+        guestUsed,
+        guestLimit,
+        fallbackResetDate,
+        "Guest Preview"
+      );
+    }
+
+    return {
+      allowed: true,
+      currentUsed: guestUsed,
+      maxLimit: guestLimit,
+      remaining: Math.max(0, guestLimit - guestUsed),
+      resetDate: fallbackResetDate,
+      tier: "Guest Preview",
+    };
+  }
+
+  // 2. Authenticated User Check in Supabase DB
+  try {
+    const supabase = createClient();
+    const { data: budget, error: budgetError } = await supabase
+      .from("token_budgets")
+      .select("tokens_used_current_cycle, max_tokens_monthly, cycle_resets_at")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (budgetError) {
+      console.warn("[assertUserTokenBudget] token_budgets query notice:", budgetError);
+    }
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("subscription_tier")
+      .eq("id", userId)
+      .maybeSingle();
+
+    const isPro = profile?.subscription_tier === "pro" || budget?.max_tokens_monthly === 2500000;
+    const userTier = isPro ? "Institutional Pro" : "Starter Allocation";
+    let currentUsed = budget?.tokens_used_current_cycle ?? 0;
+    let maxLimit = budget?.max_tokens_monthly ?? (isPro ? 2500000 : 250000);
+    const now = new Date();
+
+    let resetDate = budget?.cycle_resets_at
+      ? new Date(budget.cycle_resets_at).toLocaleDateString("en-US", {
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        })
+      : new Date(now.getFullYear(), now.getMonth() + 1, 1).toLocaleDateString("en-US", {
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        });
+
+    // Check if cycle has expired (automatic monthly rollover)
+    if (budget?.cycle_resets_at) {
+      const resetTime = new Date(budget.cycle_resets_at).getTime();
+      if (now.getTime() >= resetTime) {
+        // Roll over billing cycle to 0
+        const newResetDateIso = new Date(now.getTime() + 30 * 86400000).toISOString();
+        currentUsed = 0;
+        resetDate = new Date(newResetDateIso).toLocaleDateString("en-US", {
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        });
+
+        await supabase
+          .from("token_budgets")
+          .update({
+            tokens_used_current_cycle: 0,
+            cycle_resets_at: newResetDateIso,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", userId);
+      }
+    }
+
+    // Strict quota enforcement
+    if (currentUsed + tokensNeeded > maxLimit) {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("roadmap-token-quota-exceeded", {
+            detail: {
+              currentUsed,
+              maxLimit,
+              resetDate,
+              tier: userTier,
+            },
+          })
+        );
+      }
+
+      throw new TokenQuotaExceededError(
+        `Monthly reasoning token budget exhausted (${currentUsed.toLocaleString()} / ${maxLimit.toLocaleString()} tokens). Please upgrade to Pro to continue.`,
+        currentUsed,
+        maxLimit,
+        resetDate,
+        userTier
+      );
+    }
+
+    return {
+      allowed: true,
+      currentUsed,
+      maxLimit,
+      remaining: Math.max(0, maxLimit - currentUsed),
+      resetDate,
+      tier: userTier,
+    };
+  } catch (err: any) {
+    if (err instanceof TokenQuotaExceededError) {
+      throw err;
+    }
+    console.warn("[assertUserTokenBudget] non-fatal query fallback:", err);
+    return {
+      allowed: true,
+      currentUsed: 0,
+      maxLimit: 250000,
+      remaining: 250000,
+      resetDate: "Next Billing Cycle",
+      tier: "Starter Allocation",
+    };
+  }
+}
+
 export async function consumeTokensInDb(
   userId: string | undefined,
   tokens: number,
   agentName: string = "Agent 1: Roadmap Structure",
   details?: { promptTokens?: number; completionTokens?: number }
 ): Promise<number> {
+  // Pre-flight assertion: throw and block if quota reached
+  await assertUserTokenBudget(userId, tokens);
+
   const pTokens = details?.promptTokens ?? Math.round(tokens * 0.35);
   const cTokens = details?.completionTokens ?? (tokens - pTokens);
 
@@ -1270,22 +1519,38 @@ export async function consumeTokensInDb(
         p_user_id: userId,
         p_tokens: tokens,
       });
-      if (!error && typeof data === "number") {
+      if (error) {
+        if (error.message?.includes("TOKEN_QUOTA_EXCEEDED") || error.details?.includes("TOKEN_QUOTA_EXCEEDED")) {
+          throw new TokenQuotaExceededError(error.message, 250000, 250000);
+        }
+      } else if (typeof data === "number") {
         newTokensTotal = data;
       }
-    } catch {
-      // RPC might not be registered yet, fallback to direct query/upsert
+    } catch (rpcErr: any) {
+      if (rpcErr instanceof TokenQuotaExceededError) {
+        throw rpcErr;
+      }
     }
 
     // 2. Direct fallback to public.token_budgets table in Supabase
     if (newTokensTotal === null) {
       const { data: existing } = await supabase
         .from("token_budgets")
-        .select("tokens_used_current_cycle, max_tokens_monthly")
+        .select("tokens_used_current_cycle, max_tokens_monthly, cycle_resets_at")
         .eq("user_id", userId)
         .maybeSingle();
 
       const existingUsed = existing?.tokens_used_current_cycle || 0;
+      const maxMonthly = existing?.max_tokens_monthly || 250000;
+
+      if (existingUsed + tokens > maxMonthly) {
+        throw new TokenQuotaExceededError(
+          `Monthly reasoning token budget exhausted (${existingUsed.toLocaleString()} / ${maxMonthly.toLocaleString()} tokens).`,
+          existingUsed,
+          maxMonthly
+        );
+      }
+
       newTokensTotal = existingUsed + tokens;
 
       await supabase
@@ -1293,7 +1558,7 @@ export async function consumeTokensInDb(
         .upsert({
           user_id: userId,
           tokens_used_current_cycle: newTokensTotal,
-          max_tokens_monthly: existing?.max_tokens_monthly || 250000,
+          max_tokens_monthly: maxMonthly,
           updated_at: new Date().toISOString(),
         });
     }
@@ -1323,6 +1588,9 @@ export async function consumeTokensInDb(
 
     return newTokensTotal ?? tokens;
   } catch (err) {
+    if (err instanceof TokenQuotaExceededError) {
+      throw err;
+    }
     console.debug("consumeTokensInDb notice:", err);
     return tokens;
   }
@@ -1379,7 +1647,7 @@ export async function getTopicByIdFromSupabase(topicId: string) {
     const supabase = createClient();
     const { data, error } = await supabase
       .from("roadmap_topics")
-      .select("*, roadmap_days(id, day_number, title, roadmaps(id, title, domain, total_days, daily_hours_commitment))")
+      .select("*, roadmap_days(id, day_number, title, roadmaps(id, title, domain_context, skill_level, total_days, daily_hours_commitment))")
       .eq("id", topicId)
       .maybeSingle();
 
