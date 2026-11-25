@@ -200,7 +200,7 @@ export function RoadmapRail<D extends RailDay>({
         ref={rootRef}
         role="tree"
         aria-label={label}
-        data-lenis-prevent
+        data-lenis-prevent={className ? "" : undefined}
         onMouseLeave={closeCard}
         className={cn("overflow-x-hidden py-1", className)}
       >

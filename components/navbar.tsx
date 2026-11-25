@@ -5,10 +5,12 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter, usePathname } from "next/navigation";
 import { ArrowUpRight, Plus } from "@/components/ui/icons";
+import { DaariWordmarkSmall } from "@/components/daari-wordmark";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { createClient } from "@/lib/supabase/client";
 import { usePageTransition } from "@/components/page-transition";
 import { useLenis } from "@/components/smooth-scroll";
+import { startPath } from "@/components/create-roadmap-dialog";
 import { isInternalNavigation, markInternalNavigation } from "@/lib/navigation-tracker";
 
 export interface NavbarProps {
@@ -207,21 +209,8 @@ export function Navbar({
       onOpenDeployModal();
       return;
     }
-    if (pathname === "/") {
-      window.dispatchEvent(new CustomEvent("open-deploy-modal"));
-      const cockpit = document.getElementById("cockpit");
-      if (cockpit) {
-        cockpit.scrollIntoView({ behavior: "smooth" });
-      }
-      return;
-    }
-    transitionTo("/#cockpit");
+    startPath();
   };
-
-  const navItems = [
-    { label: "Curricula", href: "/#portfolio" },
-    { label: "Quota", href: "/billing" },
-  ];
 
   return (
     <div className={invertNav ? "dark contents" : "contents"}>
@@ -238,9 +227,8 @@ export function Navbar({
           onClick={handleBrandClick}
           className="inline-flex items-center justify-center h-8.5 px-3.5 rounded-lg bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 border border-zinc-950 dark:border-white shadow-sm hover:opacity-90 transition-all mb-0.5 select-none cursor-pointer"
         >
-          <span className="text-sm font-black tracking-[-0.03em] font-display uppercase leading-none text-center">
-            DAARI<span className="text-orange-500 dark:text-orange-600 font-extrabold">.</span>
-          </span>
+          <span className="sr-only">Daari, home</span>
+          <DaariWordmarkSmall className="h-5 w-auto" />
         </Link>
 
         {/* Small Navigation Buttons Listed in Vertical Formation */}
@@ -250,7 +238,7 @@ export function Navbar({
             onClick={handleCurriculaClick}
             className="px-2.5 py-1 rounded-md bg-transparent hover:bg-foreground hover:text-background text-muted-foreground hover:text-background text-xs uppercase tracking-wider font-medium leading-tight transition-all cursor-pointer"
           >
-            Curricula
+            Paths
           </Link>
 
           <Link
@@ -258,7 +246,7 @@ export function Navbar({
             onClick={handleQuotaClick}
             className="px-2.5 py-1 rounded-md bg-transparent hover:bg-foreground hover:text-background text-muted-foreground hover:text-background text-xs uppercase tracking-wider font-medium leading-tight transition-all cursor-pointer"
           >
-            Quota
+            Usage
           </Link>
 
           <button
@@ -267,7 +255,7 @@ export function Navbar({
             className="px-2.5 py-1 rounded-md bg-orange-500/15 hover:bg-orange-500 text-orange-600 dark:text-orange-400 hover:text-black text-xs uppercase tracking-wider font-bold leading-tight transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer font-body"
           >
             <Plus className="size-3 stroke-[2.5]" />
-            <span>Deploy</span>
+            <span>Start</span>
           </button>
         </div>
       </nav>

@@ -6,12 +6,13 @@ import { PageTransition } from "@/components/page-transition";
 import { SmoothScroll } from "@/components/smooth-scroll";
 import { ScrollTelemetry } from "@/components/scroll-telemetry";
 import { TelemetryToastContainer } from "@/components/ui/telemetry-toast";
+import { CreateRoadmapDialog } from "@/components/create-roadmap-dialog";
 import { QuotaExhaustedModal } from "@/components/quota-exhausted-modal";
 import { AgentationAgent } from "@/components/agentation-agent";
 
 export const metadata: Metadata = {
-  title: "Daari | Autonomous Learning Syndicate",
-  description: "Deterministic 3-agent pedagogical engine for mastering any discipline with high velocity and conviction.",
+  title: "Daari | Find your way into anything",
+  description: "Pick a subject and the time you have. Daari lays out the way, one day at a time, and checks that you understood.",
 };
 
 export default function RootLayout({
@@ -58,8 +59,14 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-background text-foreground selection:bg-[#d4f934] selection:text-[#08090b] transition-colors duration-200">
         <SmoothScroll>
           <ScrollTelemetry />
-          <Navbar />
-          <PageTransition>
+          <PageTransition
+            chrome={
+              <>
+                <Navbar />
+                <CreateRoadmapDialog />
+              </>
+            }
+          >
             {children}
             <QuotaExhaustedModal />
           </PageTransition>

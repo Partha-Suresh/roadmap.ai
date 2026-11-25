@@ -27,9 +27,11 @@ export const usePageTransition = () => useContext(PageTransitionContext);
 
 interface PageTransitionProps {
   children: React.ReactNode;
+  /** Navigation that uses transitionTo() but must not blur with the page */
+  chrome?: React.ReactNode;
 }
 
-export function PageTransition({ children }: PageTransitionProps) {
+export function PageTransition({ children, chrome }: PageTransitionProps) {
   const pathname = usePathname();
   const router = useRouter();
   const lenis = useLenis();
@@ -213,6 +215,8 @@ export function PageTransition({ children }: PageTransitionProps) {
       >
         <div className="h-full w-full bg-gradient-to-r from-orange-500 via-amber-400 to-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.8)]" />
       </div>
+
+      {chrome}
 
       {/* Cinematic Content Wrapper */}
       <div className={`page-transition-wrapper stage-${stage}`}>

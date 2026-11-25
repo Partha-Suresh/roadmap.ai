@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { DaariWordmark } from "@/components/daari-wordmark";
 
 export function SiteFooter() {
   return (
@@ -61,9 +62,11 @@ export function SiteFooter() {
 
           {/* Perfectly Sized Full-Width Sculptural Typographic Anchor - Completely Seen */}
           <div className="w-full max-w-full text-center overflow-hidden px-2">
-            <h2 className="text-[18vw] sm:text-[16vw] lg:text-[13vw] font-black font-display tracking-[-0.04em] uppercase leading-[0.9] text-black/10 group-hover:text-black/20 dark:text-white/10 dark:group-hover:text-white/20 transition-colors duration-500 select-none whitespace-nowrap inline-block">
-              DAARI<span className="text-orange-500/30 group-hover:text-orange-500/60 transition-colors">.</span>
-            </h2>
+            <DaariWordmark
+              className="mx-auto h-auto w-full max-w-3xl overflow-visible"
+              lettersClassName="text-zinc-200 dark:text-zinc-800 transition-colors duration-500 group-hover:text-zinc-300 dark:group-hover:text-zinc-700"
+              accentClassName="text-orange-200 dark:text-orange-900 transition-colors duration-500 group-hover:text-orange-300 dark:group-hover:text-orange-800"
+            />
           </div>
         </div>
 

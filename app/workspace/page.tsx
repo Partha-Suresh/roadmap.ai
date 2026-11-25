@@ -613,14 +613,6 @@ function WorkspaceContent() {
                 </div>
               )}
             </div>
-
-            <Link
-              href={`/curriculum${currentRoadmap ? `?id=${currentRoadmap.id}` : ""}`}
-              className="hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl border border-border bg-card text-muted-foreground hover:text-foreground transition-all shadow-2xs hover:border-orange-500/40"
-            >
-              <span>Spatial DAG View</span>
-              <ArrowUpRight className="size-3" />
-            </Link>
           </div>
         )}
         {/* Metric Bar Card using Shadcn Card */}
