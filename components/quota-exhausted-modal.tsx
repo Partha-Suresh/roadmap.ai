@@ -114,7 +114,7 @@ export function QuotaExhaustedModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={setOpen}>
-      <DialogContent className="bg-[#090b0e] border border-orange-500/30 text-white font-mono sm:max-w-lg overflow-hidden relative shadow-[0_24px_60px_rgba(0,0,0,0.92)] p-0">
+      <DialogContent className="dark bg-[#090b0e]! border border-orange-500/30 text-white font-mono sm:max-w-lg overflow-hidden relative shadow-[0_24px_60px_rgba(0,0,0,0.92)] p-0">
         {/* Dynamic Warning Laser Accent */}
         <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-orange-500 via-amber-400 to-rose-500 shadow-[0_0_12px_rgba(249,115,22,0.9)]" />
 
@@ -129,12 +129,12 @@ export function QuotaExhaustedModal({
               </Badge>
             </div>
 
-            <DialogTitle className="text-xl font-bold font-sans text-white tracking-tight flex items-center gap-2 pt-1">
+            <DialogTitle className="text-xl font-bold font-sans text-white! tracking-tight flex items-center gap-2 pt-1">
               <AlertTriangle className="size-5 text-orange-500 shrink-0" />
               <span>Reasoning Token Budget Reached</span>
             </DialogTitle>
 
-            <DialogDescription className="text-xs font-mono text-zinc-400 leading-relaxed pt-1">
+            <DialogDescription className="text-xs font-mono text-zinc-400! leading-relaxed pt-1">
               You have exhausted all allocated AI reasoning tokens for your current billing cycle. Further agent generation (curriculum synthesis, DAG subtopics, and Socratic evaluation) is suspended until cycle rollover or quota upgrade.
             </DialogDescription>
           </DialogHeader>

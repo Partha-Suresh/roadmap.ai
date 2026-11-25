@@ -1,8 +1,6 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
   getUserRoadmaps,
@@ -10,27 +8,29 @@ import {
   RoadmapSummary,
 } from "@/lib/supabase-roadmap";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import {
   ArrowRight,
-  ArrowUpRight,
-  Check,
   Loader2,
   Plus,
   Trash2,
   Layers,
   Sparkles,
 } from "@/components/ui/icons";
-import { TiltedCard, StarBorder } from "@/components/react-bits";
+import { TiltedCard } from "@/components/react-bits";
 import { TelemetryConfirmDialog } from "@/components/ui/telemetry-confirm-dialog";
 import { showTelemetryToast } from "@/components/ui/telemetry-toast";
+import { startPath } from "@/components/create-roadmap-dialog";
 import { usePageTransition } from "@/components/page-transition";
-import { useLenis } from "@/components/smooth-scroll";
 
-interface RoadmapWithResume extends RoadmapSummary {
-  resumeDayNumber?: number;
-  resumeTopicTitle?: string;
-  isFullyCompleted?: boolean;
+/** Built-in examples, shown until there is something saved */
+const isSample = (r: RoadmapSummary) => r.id.startsWith("demo-");
+
+function progressNote(r: RoadmapSummary): string {
+  const total = r.total_topics_count ?? 0;
+  const done = r.completed_topics_count ?? 0;
+  if (total === 0) return "Ready to start";
+  if (done >= total) return "All topics done";
+  return `${done} of ${total} topics done`;
 }
 
 // Longest the greeting waits for a name before going straight to the roadmaps
@@ -45,16 +45,14 @@ function getMetadataName(
 }
 
 export default function StudioPage() {
-  const router = useRouter();
   const { transitionTo } = usePageTransition();
-  const lenis = useLenis();
   const supabase = createClient();
 
   // User & Data State
   const [currentUser, setCurrentUser] = useState<any>(null);
   // null until we know who is here, so the greeting never shows a placeholder name
   const [userName, setUserName] = useState<string | null>(null);
-  const [roadmaps, setRoadmaps] = useState<RoadmapWithResume[]>([]);
+  const [roadmaps, setRoadmaps] = useState<RoadmapSummary[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
 
   // Animation Stage Machine
@@ -94,7 +92,7 @@ export default function StudioPage() {
         if (!isMounted) return;
         const sessionUser = sessionData?.session?.user ?? null;
         const sessionName = getMetadataName(sessionUser);
-        if (!sessionUser) setUserName("Architect");
+        if (!sessionUser) setUserName("there");
         else if (sessionName) setUserName(sessionName);
 
         const { data: authData } = await supabase.auth.getUser();
@@ -121,23 +119,14 @@ export default function StudioPage() {
             resolvedName = emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1);
           }
 
-          setUserName(resolvedName || "Architect");
+          setUserName(resolvedName || "there");
         }
 
         // Fetch User's Roadmaps directly without slow nested Promise.all loops
         const rawRoadmaps = await getUserRoadmaps(user ? user.id : "guest");
         if (!isMounted) return;
 
-        const augmented: RoadmapWithResume[] = rawRoadmaps.map((r) => ({
-          ...r,
-          resumeDayNumber: 1,
-          resumeTopicTitle: r.progress_percentage === 100 ? "All milestones completed" : "Active Milestone",
-          isFullyCompleted: r.progress_percentage === 100,
-        }));
-
-        if (isMounted) {
-          setRoadmaps(augmented);
-        }
+        setRoadmaps(rawRoadmaps);
       } catch (err) {
         console.warn("Studio data loading notice:", err);
       } finally {
@@ -155,7 +144,7 @@ export default function StudioPage() {
       if (!isMounted) return;
       if (event === "SIGNED_OUT") {
         setCurrentUser(null);
-        setUserName("Architect");
+        setUserName("there");
         loadStudioData();
       } else if (event === "SIGNED_IN" || event === "USER_UPDATED") {
         loadStudioData();
@@ -167,7 +156,7 @@ export default function StudioPage() {
       if (!isMounted) return;
       if (customEvent.detail?.event === "SIGNED_OUT") {
         setCurrentUser(null);
-        setUserName("Architect");
+        setUserName("there");
       }
       loadStudioData();
     };
@@ -213,8 +202,8 @@ export default function StudioPage() {
     setStage("repertoire");
     showTelemetryToast({
       type: "info",
-      title: "PREFERENCE STORED",
-      message: "Studio cinematic intro will be bypassed on future visits.",
+      title: "Saved",
+      message: "Studio will open straight to your paths.",
     });
   }, [clearAllAnimationTimers]);
 
@@ -228,10 +217,10 @@ export default function StudioPage() {
       setAlwaysSkip(next);
       showTelemetryToast({
         type: "info",
-        title: next ? "AUTO-SKIP ENABLED" : "AUTO-SKIP DISABLED",
+        title: next ? "Greeting off" : "Greeting on",
         message: next
-          ? "Studio cinematic intro will be skipped on every visit."
-          : "Studio cinematic intro will play on your next visit.",
+          ? "Studio will open straight to your paths."
+          : "It will play on your next visit.",
       });
     } catch {
       // ignore
@@ -288,12 +277,6 @@ export default function StudioPage() {
     }, 5450);
 
     animationTimersRef.current = [t1, t2, t3, t4, t5, t6];
-
-    showTelemetryToast({
-      type: "info",
-      title: "INTRO RESTORED",
-      message: "Cinematic intro animation sequence restarted.",
-    });
   }, [clearAllAnimationTimers]);
 
   // 2. Cinematic Animation Sequence Timer (Respects stored always-skip & registers in timer ref)
@@ -373,11 +356,11 @@ export default function StudioPage() {
   }, [stage, handleSkipIntro]);
 
   // Delete Roadmap Confirmation Dialog State
-  const [roadmapToDelete, setRoadmapToDelete] = useState<RoadmapWithResume | null>(null);
+  const [roadmapToDelete, setRoadmapToDelete] = useState<RoadmapSummary | null>(null);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const requestDeleteRoadmap = (roadmap: RoadmapWithResume, e: React.MouseEvent) => {
+  const requestDeleteRoadmap = (roadmap: RoadmapSummary, e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
     setRoadmapToDelete(roadmap);
@@ -396,21 +379,21 @@ export default function StudioPage() {
         setRoadmaps((prev) => prev.filter((r) => r.id !== id));
         showTelemetryToast({
           type: "success",
-          title: "TRAJECTORY PURGED",
-          message: `Curriculum "${title}" purged from Supabase cloud.`,
+          title: "Path deleted",
+          message: `"${title}" is gone.`,
         });
       } else {
         showTelemetryToast({
           type: "error",
-          title: "PURGE FAILED",
-          message: "Unable to delete trajectory from database.",
+          title: "Could not delete",
+          message: "The path is still there. Please try again.",
         });
       }
     } catch (err: any) {
       showTelemetryToast({
         type: "error",
-        title: "PURGE ERROR",
-        message: err.message || "Failed to purge trajectory.",
+        title: "Could not delete",
+        message: err.message || "Please try again.",
       });
     } finally {
       setDeletingId(null);
@@ -530,13 +513,13 @@ export default function StudioPage() {
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-8 border-b border-border dark:border-white/10 mb-10">
             <div>
               <div className="inline-flex items-center mb-2 font-mono text-xs text-orange-600 dark:text-orange-400 font-semibold tracking-wider uppercase">
-                <span>STUDIO COCKPIT</span>
+                <span>Studio</span>
               </div>
               <h1 className="text-3xl sm:text-5xl font-black tracking-[-0.04em] text-foreground font-display">
                 What are we doing today?
               </h1>
               <p className="text-xs sm:text-sm text-muted-foreground mt-2 max-w-xl font-mono">
-                Select an active trajectory to resume your learning right where you stopped.
+                Choose a path and pick up right where you stopped.
               </p>
             </div>
 
@@ -546,10 +529,10 @@ export default function StudioPage() {
                 type="button"
                 onClick={handleRestoreIntro}
                 className="inline-flex items-center gap-2 h-10 px-3.5 rounded-xl border border-border/80 dark:border-white/10 bg-card dark:bg-[#121418] hover:border-orange-500/50 text-xs font-mono text-muted-foreground hover:text-foreground transition-all cursor-pointer shadow-sm select-none group"
-                title="Restore and replay the studio greeting animation"
+                title="Play the greeting again"
               >
                 <Sparkles className="size-3.5 text-orange-500 group-hover:rotate-12 transition-transform" />
-                <span>Restore Intro</span>
+                <span>Replay intro</span>
               </button>
 
               {/* Always Skip Intro Preference Toggle */}
@@ -559,23 +542,22 @@ export default function StudioPage() {
                 className="inline-flex items-center gap-2 h-10 px-3.5 rounded-xl border border-border/80 dark:border-white/10 bg-card dark:bg-[#121418] hover:border-orange-500/50 text-xs font-mono text-muted-foreground hover:text-foreground transition-all cursor-pointer shadow-sm select-none"
                 title={
                   alwaysSkip
-                    ? "Intro auto-skip is ON (saved in store). Click to re-enable intro animation."
-                    : "Click to always auto-skip intro animation on future visits."
+                    ? "The greeting is skipped. Click to play it on your next visit."
+                    : "Click to skip the greeting from now on."
                 }
               >
-                <span>{alwaysSkip ? "Auto-Skip Intro: ON" : "Auto-Skip Intro: OFF"}</span>
+                <span>{alwaysSkip ? "Skip intro: on" : "Skip intro: off"}</span>
               </button>
 
-              <Link href="/#cockpit">
-                <Button
-                  variant="orange"
-                  size="sm"
-                  className="font-mono text-xs uppercase tracking-wider font-bold h-10 px-5 flex items-center gap-2 cursor-pointer shadow-sm"
-                >
-                  <Plus className="size-3.5 stroke-[2.5]" />
-                  <span>Deploy New Trajectory</span>
-                </Button>
-              </Link>
+              <Button
+                variant="orange"
+                size="sm"
+                onClick={() => startPath()}
+                className="font-mono text-xs uppercase tracking-wider font-bold h-10 px-5 flex items-center gap-2 cursor-pointer shadow-sm"
+              >
+                <Plus className="size-3.5 stroke-[2.5]" />
+                <span>Start a path</span>
+              </Button>
             </div>
           </div>
 
@@ -584,7 +566,7 @@ export default function StudioPage() {
             <div className="py-24 text-center rounded-2xl bg-card dark:bg-[#121418] border border-border dark:border-white/10 p-12">
               <Loader2 className="size-8 text-orange-500 animate-spin mx-auto mb-4" />
               <p className="text-xs font-mono text-muted-foreground tracking-wider">
-                Loading roadmaps...
+                Loading your paths
               </p>
             </div>
           ) : roadmaps.length > 0 ? (
@@ -600,6 +582,7 @@ export default function StudioPage() {
                     role="button"
                     tabIndex={0}
                     onKeyDown={(e) => {
+                      if (e.target !== e.currentTarget) return;
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
                         handleSelectRoadmap(r.id);
@@ -612,19 +595,23 @@ export default function StudioPage() {
                           {/* Top Meta */}
                           <div className="flex items-center justify-between text-xs font-mono text-muted-foreground mb-4">
                             <span className="uppercase tracking-wider text-[11px] font-semibold text-orange-600 dark:text-orange-400">
-                              {r.domain_archetype?.replace(/_/g, " ") || "Curriculum"}
+                              {r.domain_archetype?.replace(/_/g, " ") || "Path"}
+                              {isSample(r) && <span className="ml-2 text-muted-foreground">Sample</span>}
                             </span>
                             <div className="flex items-center gap-2">
                               <span>{r.total_days}d · {r.daily_hours_commitment}h/day</span>
-                              <button
-                                type="button"
-                                onClick={(e) => requestDeleteRoadmap(r, e)}
-                                disabled={deletingId === r.id}
-                                className="text-muted-foreground/50 hover:text-red-500 p-1 rounded transition-colors cursor-pointer"
-                                title="Delete trajectory"
-                              >
-                                <Trash2 className="size-3.5" />
-                              </button>
+                              {!isSample(r) && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => requestDeleteRoadmap(r, e)}
+                                  disabled={deletingId === r.id}
+                                  className="text-muted-foreground/50 hover:text-red-500 p-1 rounded transition-colors cursor-pointer"
+                                  title="Delete path"
+                                  aria-label={`Delete ${r.title}`}
+                                >
+                                  <Trash2 className="size-3.5" />
+                                </button>
+                              )}
                             </div>
                           </div>
 
@@ -633,23 +620,19 @@ export default function StudioPage() {
                             {r.title}
                           </h3>
 
-                          {/* Subtitle / Next Milestone */}
+                          {/* Subtitle */}
                           <p className="text-xs text-muted-foreground font-mono mt-2 truncate">
-                            {r.isFullyCompleted
-                              ? "✓ All milestones completed"
-                              : r.resumeTopicTitle
-                              ? `Day ${r.resumeDayNumber || 1}: ${r.resumeTopicTitle}`
-                              : "Ready to start"}
+                            {progressNote(r)}
                           </p>
                         </div>
 
                         {/* Bottom: Progress + Action */}
                         <div className="mt-8 pt-4 border-t border-border/60 dark:border-white/10 flex items-center justify-between">
                           <span className="text-xs font-mono text-muted-foreground">
-                            {progress}% completed
+                            {progress}% done
                           </span>
                           <div className="text-xs font-mono text-foreground font-semibold flex items-center gap-1.5 group-hover:text-orange-500 transition-colors">
-                            <span>Resume</span>
+                            <span>{isSample(r) ? "Look around" : "Continue"}</span>
                             <ArrowRight className="size-3.5 stroke-[2] group-hover:translate-x-1 transition-transform text-orange-500" />
                           </div>
                         </div>
@@ -666,18 +649,16 @@ export default function StudioPage() {
                 <Layers className="size-6" />
               </div>
               <h2 className="text-xl font-bold font-display text-foreground">
-                No active trajectories found
+                No paths yet
               </h2>
               <p className="text-xs font-mono text-muted-foreground mt-2 max-w-sm mx-auto leading-relaxed">
-                Deploy your first multi-agent syllabus to enter the pedagogical studio.
+                Pick a subject and the time you have, and Daari will lay out the way.
               </p>
               <div className="mt-6">
-                <Link href="/#cockpit">
-                  <Button variant="orange" size="sm" className="font-mono text-xs uppercase tracking-wider font-bold h-10 px-5">
-                    <Plus className="size-3.5 mr-2 stroke-[2.5]" />
-                    <span>New Trajectory</span>
-                  </Button>
-                </Link>
+                <Button variant="orange" size="sm" onClick={() => startPath()} className="font-mono text-xs uppercase tracking-wider font-bold h-10 px-5">
+                  <Plus className="size-3.5 mr-2 stroke-[2.5]" />
+                  <span>Start a path</span>
+                </Button>
               </div>
             </div>
           )}
@@ -688,14 +669,14 @@ export default function StudioPage() {
       <TelemetryConfirmDialog
         open={confirmDialogOpen}
         onOpenChange={setConfirmDialogOpen}
-        title="Delete Curriculum Roadmap"
+        title="Delete this path?"
         description={
           roadmapToDelete
-            ? `Are you sure you want to permanently delete "${roadmapToDelete.title}"? All associated daily topics, milestones, and learning history will be deleted.`
-            : "Are you sure you want to delete this roadmap?"
+            ? `"${roadmapToDelete.title}" and everything in it will be deleted: its days, topics, lessons and progress.`
+            : ""
         }
-        confirmText="Delete Roadmap"
-        cancelText="Cancel"
+        confirmText="Delete path"
+        cancelText="Keep it"
         variant="danger"
         isLoading={deletingId !== null}
         onConfirm={handleConfirmDelete}

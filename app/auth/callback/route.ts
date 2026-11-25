@@ -15,6 +15,11 @@ export async function GET(request: Request) {
     }
   }
 
+  // A password link that failed goes back to where a new one can be sent
+  if (destination === "/reset-password") {
+    return NextResponse.redirect(`${origin}/reset-password`);
+  }
+
   // Return the user to an error page with instructions
   return NextResponse.redirect(`${origin}/login?error=auth_callback_failed`);
 }

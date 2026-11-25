@@ -6,9 +6,18 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { safeRedirect } from "@/lib/auth-redirect";
 import { PENDING_PATH_KEY, type PathPreset } from "@/components/create-roadmap-dialog";
-import { Input } from "@/components/ui/input";
-import { ArrowRight, Loader2 } from "@/components/ui/icons";
-import { cn } from "@/lib/utils";
+import { explainAuthError } from "@/lib/auth-errors";
+import {
+  AuthError,
+  AuthField,
+  AuthShell,
+  AuthSubmit,
+  AuthTitle,
+  PasswordField,
+  authLink,
+  type AuthStop,
+} from "@/components/auth/auth-shell";
+import { Loader2 } from "@/components/ui/icons";
 
 type Mode = "login" | "signup";
 
@@ -30,29 +39,6 @@ const COPY = {
     switchHref: "/login",
   },
 } as const;
-
-/** Says what went wrong and what to do about it */
-function explain(err: unknown): string {
-  const { code, message = "", name = "" } = (err ?? {}) as { code?: string; message?: string; name?: string };
-  switch (code) {
-    case "invalid_credentials":
-      return "That email and password don't match. Check both and try again.";
-    case "email_not_confirmed":
-      return "Confirm your email first. The link is in the message we sent when you signed up.";
-    case "user_already_exists":
-    case "email_exists":
-      return "There is already an account with this email. Sign in instead.";
-    case "weak_password":
-      return "That password is too easy to guess. Try a longer one.";
-    case "over_email_send_rate_limit":
-    case "over_request_rate_limit":
-      return "Too many tries. Wait a minute, then try again.";
-  }
-  if (name === "AuthRetryableFetchError" || /fetch|network/i.test(message)) {
-    return "Daari can't be reached right now. Check your connection and try again.";
-  }
-  return message || "Something went wrong. Please try again.";
-}
 
 const noSubscription = () => () => {};
 
@@ -88,7 +74,6 @@ function AuthContent({ mode }: { mode: Mode }) {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState<"form" | "google" | null>(null);
   const [checkInbox, setCheckInbox] = useState(false);
   const [error, setError] = useState<string | null>(
@@ -130,7 +115,7 @@ function AuthContent({ mode }: { mode: Mode }) {
       router.push(target);
       router.refresh();
     } catch (err) {
-      setError(explain(err));
+      setError(explainAuthError(err));
       setBusy(null);
     }
   };
@@ -149,212 +134,93 @@ function AuthContent({ mode }: { mode: Mode }) {
       });
       if (error) throw error;
     } catch (err) {
-      setError(explain(err));
+      setError(explainAuthError(err));
       setBusy(null);
     }
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-background text-foreground font-sans transition-colors duration-200">
-      <main className="mx-auto grid w-full max-w-5xl flex-1 content-center items-center gap-16 px-6 pb-16 pt-40 sm:px-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:gap-24 lg:pt-32">
-        <PathSoFar mode={mode} pending={pending} />
-
-        <div className="w-full max-w-md lg:max-w-none">
-          {checkInbox ? (
-            <div role="status">
-              <h1 className="text-3xl font-bold tracking-tight [word-spacing:0.12em]">Check your email</h1>
-              <p className="mt-4 text-base leading-relaxed text-muted-foreground">
-                We sent a link to <span className="font-semibold text-foreground">{email}</span>. Open it to finish creating
-                your account.
-              </p>
-              <button
-                type="button"
-                onClick={() => setCheckInbox(false)}
-                className="mt-6 text-sm font-semibold underline underline-offset-4 hover:text-orange-600 dark:hover:text-orange-400 cursor-pointer"
-              >
-                Use a different email
-              </button>
-            </div>
-          ) : (
-            <>
-              <h1 className="text-3xl font-bold tracking-tight [word-spacing:0.12em]">{copy.title}</h1>
-
-              <button
-                type="button"
-                onClick={handleGoogle}
-                disabled={busy !== null}
-                className="mt-8 flex h-12 w-full items-center justify-center gap-3 rounded-full border border-border bg-card text-base font-semibold transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500 disabled:opacity-60 cursor-pointer disabled:cursor-default"
-              >
-                {busy === "google" ? <Loader2 className="size-4 animate-spin" /> : <GoogleMark />}
-                Continue with Google
-              </button>
-
-              <div className="my-6 flex items-center gap-4 text-sm text-muted-foreground">
-                <span className="h-px flex-1 bg-border" />
-                or with email
-                <span className="h-px flex-1 bg-border" />
-              </div>
-
-              <form onSubmit={handleSubmit} className="space-y-4">
-                {mode === "signup" && (
-                  <label className="block">
-                    <span className="mb-1.5 block text-sm font-semibold">Your name</span>
-                    <Input
-                      name="name"
-                      autoComplete="name"
-                      required
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      className="h-12 bg-card! text-base!"
-                    />
-                  </label>
-                )}
-
-                <label className="block">
-                  <span className="mb-1.5 block text-sm font-semibold">Email</span>
-                  <Input
-                    type="email"
-                    name="email"
-                    autoComplete="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="h-12 bg-card! text-base!"
-                  />
-                </label>
-
-                <div>
-                  <label htmlFor="password" className="mb-1.5 block text-sm font-semibold">
-                    Password
-                  </label>
-                  <div className="relative">
-                    <Input
-                      id="password"
-                      type={showPassword ? "text" : "password"}
-                      name="password"
-                      autoComplete={mode === "login" ? "current-password" : "new-password"}
-                      required
-                      minLength={mode === "signup" ? 6 : undefined}
-                      aria-describedby={mode === "signup" ? "password-help" : undefined}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="h-12 bg-card! pr-20! text-base!"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword((v) => !v)}
-                      aria-pressed={showPassword}
-                      aria-label={showPassword ? "Hide password" : "Show password"}
-                      className="absolute inset-y-1 right-1 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
-                    >
-                      {showPassword ? "Hide" : "Show"}
-                    </button>
-                  </div>
-                  {mode === "signup" && (
-                    <p id="password-help" className="mt-1.5 text-sm text-muted-foreground">
-                      At least 6 characters.
-                    </p>
-                  )}
-                </div>
-
-                <div aria-live="polite">
-                  {error && (
-                    <p className="rounded-xl bg-rose-500/10 px-4 py-3 text-sm leading-relaxed text-rose-700 dark:text-rose-300">
-                      {error}
-                    </p>
-                  )}
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={busy !== null}
-                  className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-orange-500 text-base font-semibold text-black transition-colors hover:bg-orange-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500 disabled:opacity-70 cursor-pointer disabled:cursor-default"
-                >
-                  {busy === "form" ? (
-                    <>
-                      <Loader2 className="size-4 animate-spin" />
-                      {copy.busy}
-                    </>
-                  ) : (
-                    <>
-                      {copy.submit}
-                      <ArrowRight className="size-4" />
-                    </>
-                  )}
-                </button>
-              </form>
-
-              <p className="mt-6 text-sm text-muted-foreground">
-                {copy.switchText}{" "}
-                <Link
-                  href={switchHref}
-                  className="font-semibold text-foreground underline underline-offset-4 hover:text-orange-600 dark:hover:text-orange-400"
-                >
-                  {copy.switchLink}
-                </Link>
-              </p>
-            </>
-          )}
+    <AuthShell stops={stopsFor(mode, pending)}>
+      {checkInbox ? (
+        <div role="status">
+          <AuthTitle>Check your email</AuthTitle>
+          <p className="mt-4 text-base leading-relaxed text-muted-foreground">
+            We sent a link to <span className="font-semibold text-foreground">{email}</span>. Open it to finish creating your
+            account.
+          </p>
+          <button type="button" onClick={() => setCheckInbox(false)} className={`mt-6 text-sm cursor-pointer ${authLink}`}>
+            Use a different email
+          </button>
         </div>
-      </main>
-    </div>
+      ) : (
+        <>
+          <AuthTitle>{copy.title}</AuthTitle>
+
+          <button
+            type="button"
+            onClick={handleGoogle}
+            disabled={busy !== null}
+            className="mt-8 flex h-12 w-full items-center justify-center gap-3 rounded-full border border-border bg-card text-base font-semibold transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500 disabled:opacity-60 cursor-pointer disabled:cursor-default"
+          >
+            {busy === "google" ? <Loader2 className="size-4 animate-spin" /> : <GoogleMark />}
+            Continue with Google
+          </button>
+
+          <div className="my-6 flex items-center gap-4 text-sm text-muted-foreground">
+            <span className="h-px flex-1 bg-border" />
+            or with email
+            <span className="h-px flex-1 bg-border" />
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {mode === "signup" && (
+              <AuthField label="Your name" name="name" autoComplete="name" value={fullName} onChange={setFullName} />
+            )}
+            <AuthField label="Email" name="email" type="email" autoComplete="email" value={email} onChange={setEmail} />
+            <PasswordField
+              label="Password"
+              value={password}
+              onChange={setPassword}
+              isNew={mode === "signup"}
+              aside={
+                mode === "login" && (
+                  <Link href="/forgot-password" className={authLink}>
+                    Forgot password?
+                  </Link>
+                )
+              }
+            />
+            <AuthError message={error} />
+            <AuthSubmit busy={busy === "form"} disabled={busy !== null} label={copy.submit} busyLabel={copy.busy} />
+          </form>
+
+          <p className="mt-6 text-sm text-muted-foreground">
+            {copy.switchText}{" "}
+            <Link href={switchHref} className={authLink}>
+              {copy.switchLink}
+            </Link>
+          </p>
+        </>
+      )}
+    </AuthShell>
   );
 }
 
-/** Signing in, drawn as one stop on the way */
-function PathSoFar({ mode, pending }: { mode: Mode; pending: PathPreset | null }) {
-  const here = mode === "login" ? "Sign in" : "Create your account";
-  const plan = pending?.subject
-    ? {
-        label: pending.subject,
-        note: pending.days ? `${pending.days} days, ${pending.hours ?? 2} hours a day. Kept for you.` : "Kept for you.",
-      }
-    : null;
-
-  const stops: Array<{ label: string; note: string; state: "done" | "here" | "next" }> = [
-    ...(plan ? [{ ...plan, state: "done" as const }] : []),
-    { label: here, note: "You are here", state: "here" },
-    ...(mode === "login" && !plan
-      ? [{ label: "Pick up where you stopped", note: "Your paths are in the Studio", state: "next" as const }]
-      : [{ label: plan ? "See the whole way" : "Say where you want to get to", note: plan ? "Daari lays out the days" : "Any subject, at any pace", state: "next" as const }]),
-    { label: "Take one topic at a time", note: "And prove it to yourself", state: "next" },
-  ];
-
-  return (
-    <ol aria-label="Your path so far" className="hidden lg:block">
-      {stops.map((stop, i) => (
-        <li key={stop.label} aria-current={stop.state === "here" ? "step" : undefined} className="relative pb-14 pl-12 last:pb-0">
-          {i < stops.length - 1 && (
-            <span
-              aria-hidden="true"
-              className={cn(
-                "absolute -bottom-2 left-[11px] top-2 w-0.5",
-                stop.state === "done" ? "bg-saffron" : "bg-foreground/15"
-              )}
-            />
-          )}
-          <span
-            aria-hidden="true"
-            className={cn(
-              "absolute left-1 top-1.5 size-4 rounded-full border-[3px] bg-background",
-              stop.state === "done" && "border-saffron bg-saffron",
-              stop.state === "here" && "border-saffron shadow-[0_0_0_6px_color-mix(in_oklab,var(--saffron)_22%,transparent)]",
-              stop.state === "next" && "border-foreground/25"
-            )}
-          />
-          <p
-            className={cn(
-              "break-words text-2xl font-bold leading-snug tracking-tight",
-              stop.state === "next" ? "text-muted-foreground" : "text-foreground"
-            )}
-          >
-            {stop.label}
-          </p>
-          <p className="mt-1 text-base text-muted-foreground">{stop.note}</p>
-        </li>
-      ))}
-    </ol>
-  );
+function stopsFor(mode: Mode, pending: PathPreset | null): AuthStop[] {
+  const here: AuthStop = { label: COPY[mode].title, note: "You are here", state: "here" };
+  const last: AuthStop = { label: "Take one topic at a time", note: "And prove it to yourself", state: "next" };
+  if (pending?.subject) {
+    const time = pending.days ? `${pending.days} days, ${pending.hours ?? 2} hours a day. ` : "";
+    return [
+      { label: pending.subject, note: `${time}Kept for you.`, state: "done" },
+      here,
+      { label: "See the whole way", note: "Daari lays out the days", state: "next" },
+      last,
+    ];
+  }
+  return mode === "login"
+    ? [here, { label: "Pick up where you stopped", note: "Your paths are in the Studio", state: "next" }, last]
+    : [here, { label: "Say where you want to get to", note: "Any subject, at any pace", state: "next" }, last];
 }
 
 function GoogleMark() {
