@@ -1,314 +1,348 @@
 ---
-name: apexkrish-ui-engineering
-description: Complete UI/UX design system, component architecture, styling tokens, and frontend engineering rules for ApexKrish Capital. Activate this skill whenever creating, modifying, or refactoring user interfaces, components, styling, animations, or layouts for this website.
+name: editorial-ui
+description: Design, UX, copy and front-end rules for building web interfaces that look designed, not generated. Covers the visual direction (editorial layouts, type, colour, motion), plain-language copy, interaction patterns, light and dark themes, responsive checks, and how to verify work with screenshots. Use whenever creating, redesigning, restyling or reviewing any page, component, layout, animation, form, dialog or landing page, including quick "vibe coding" requests like "make this look better" or "redesign the home page".
 ---
 
-# ApexKrish Capital — Frontend & UI Engineering Skill
+# Editorial UI: design, UX and front-end rules
 
-This skill governs all user interface development, component styling, layout architecture, and visual design standards for **ApexKrish Capital** (`apexkrishcapital.com`), an institutional-grade private equity syndication platform connecting accredited investors with Special Purpose Vehicle (SPV) allocations into tier-one frontier technology companies.
+These are the rules for any interface built with this skill. They came from real feedback on a shipped
+product (Daari, a learning-path app). Where a rule exists because something went wrong, the reason is
+given, so you can judge edge cases instead of following blindly.
 
----
+The short version:
 
-## 1. UI Tech Stack & Core Dependencies
-
-| Layer | Library / Tool | Implementation Details |
-| :--- | :--- | :--- |
-| **Framework** | Next.js 16 (App Router) | Client & Server Components (`'use client'` for interactive UI), React 19. |
-| **CSS Engine** | Tailwind CSS v4 | `@import "tailwindcss";`, `@import "tw-animate-css";`, `@theme inline { ... }`. |
-| **Component Primitives** | Radix UI (`radix-ui`) / Shadcn | Accessible headless primitives styled with Tailwind and `class-variance-authority` (CVA). |
-| **Utility** | `clsx` + `tailwind-merge` | Centralized `cn(...)` utility in `@/lib/utils`. |
-| **Icons** | Lucide React (`lucide-react`) | Geometric, high-contrast UI iconography (`size-4`, `w-4 h-4`, `stroke-width: 1.75–2`). |
-| **Auth UI** | Clerk (`@clerk/nextjs`, `@clerk/ui`) | Customized with neobrutalism theme and brand localization. |
-| **Typography** | `next/font/google` | Inter (body text), Geist Sans (headlines), Geist Mono (financial data). |
+1. **Look at references before designing.** Screenshot them and name what they share.
+2. **Editorial, not "AI app".** Big type, thin rules, small bracketed labels, asymmetric grids, room to breathe, one accent colour.
+3. **Plain words.** Write like a person explaining it to a friend. No jargon, no hype, no fake features.
+4. **Both themes, every size.** Nothing is done until it has been checked in light and dark, at 1920, 1440, 1366, 1024 and 390 wide.
+5. **Prove it with screenshots.** Don't report "done" from code alone.
 
 ---
 
-## 2. The Anti-Slop Architectural Standard
+## 1. How to work
 
-All frontend design decisions on this platform strictly follow the **Clean Minimalist Institutional Standard**:
+### 1.1 Before writing code
 
-- **No Generic AI Slop:** Do NOT use multi-color neon gradients (purple/pink blurs), oversized generic floating cards, or bubbly cartoon illustrations.
-- **Institutional Authority:** Visuals must evoke top-tier private equity and modern fintech (resembling Linear, Ramp, Mercury, and Stripe).
-- **High Data Density with Generous Breathing Room:** Data metrics must be legible, organized in structured grids, and spaced cleanly with consistent padding.
-- **Subtle Surface Depth:** Use 0.5px hairline borders, soft inner bevels, and multi-layered translucent glassmorphism instead of heavy drop shadows.
-- **Accurate Financial Vocabulary:** Standard deal minimums are **$5,000 USD**; vehicle terms feature **10% performance carry** and **2% minimum management fees**; compliance is strictly **SEC Rule 506(c)**.
+1. **Read the existing code.** Find the theme tokens (`globals.css`, the Tailwind config), the fonts, the shared components and the navbar. Reuse them. Do not invent a second design system next to the first.
+2. **Look at references.** If the user gives URLs, screenshot them at 1440×900 while scrolling (see `scripts/shoot.mjs`) and write down 4–6 things they have in common. Design from those traits; never copy a site's layout, text, logo or images.
+3. **Decide the scope out loud.** "Opening page" can mean the first screen or the whole home page. Pick the more likely reading, say which one you picked, and keep everything else (navbar, footer, other pages) untouched unless asked.
+4. **Keep behaviour, change the look.** In a redesign, every working feature survives (data loading, forms, auth state, links, anchors). Only the presentation changes.
+5. **Work on a branch for redesigns.** Stash or branch the old version first so it can come back. Commit only when the user asks.
 
----
+### 1.2 While building
 
-## 3. Design Tokens & Styling Foundations
+- Make one coherent pass, then screenshot, then fix. Do not tweak blind.
+- Keep new pieces in small components (`components/<page>/<piece>.tsx`) with a one-line comment saying what each is for.
+- Put page-specific CSS in one clearly labelled block in `globals.css` (`/* ===== Home page ===== */`).
 
-### 3.1 Color Palette (OKLCH Color Space)
+### 1.3 Before saying it is done
 
-The site utilizes OKLCH color tokens defined in `app/globals.css`. Always use semantic Tailwind color classes (`bg-background`, `text-foreground`, `bg-card`, `border-border`, etc.) instead of hardcoded hex values.
-
-```css
-/* Light Mode Foundation (Platinum Slate & Obsidian Ink) */
---background: oklch(0.960 0.003 250);       /* Soft platinum slate surface */
---foreground: oklch(0.16 0.006 250);        /* Deep obsidian black */
---card: oklch(1 0 0);                       /* Pure white card surface */
---card-foreground: oklch(0.16 0.006 250);
---popover: oklch(0.985 0.002 250);
---muted: oklch(0.925 0.004 250);
---muted-foreground: oklch(0.46 0.006 250);
---border: oklch(0.895 0.005 250);
---radius: 0.625rem;                         /* 10px base border-radius */
-
-/* Dark Mode Foundation (Obsidian & High-Contrast Slate) */
---background: oklch(0.145 0 0);             /* Deep dark background */
---foreground: oklch(0.985 0 0);             /* Pure crisp white */
---card: oklch(0.205 0 0);                   /* Elevated obsidian surface */
---card-foreground: oklch(0.985 0 0);
---popover: oklch(0.205 0 0);
---muted: oklch(0.269 0 0);
---muted-foreground: oklch(0.708 0 0);
---border: oklch(1 0 0 / 10%);               /* 10% translucent white hairline */
-```
-
-### 3.2 Semantic Multi-Color Palette
-
-The platform uses a sophisticated multi-color palette anchored by energetic saffron & flame orange, combined with rich secondary semantic accents:
-
-- **Saffron & Flame Orange (Primary Hero & High-Conviction Actions):**
-  - Primary call-to-actions, active selection rings, active topic markers, brand mark accents.
-  - Tailwind: `text-orange-600 dark:text-orange-400`, `bg-orange-500`, `shadow-[0_4px_22px_rgba(249,115,22,0.4)]`, `border-orange-500/30`.
-- **Amber Gold (Curriculum Days, Daily Time & Milestones):**
-  - Daily hour allocations, code language tags, milestone stats.
-  - Tailwind: `text-amber-600 dark:text-amber-400`, `bg-amber-500/10`, `border-amber-500/20`.
-- **Emerald & Jade (Deterministic Verification & Completion):**
-  - Completed topics, 100% pedagogical guarantees, verified status.
-  - Tailwind: `text-emerald-600 dark:text-emerald-400`, `bg-emerald-500/10`, `border-emerald-500/20`.
-- **Cyan & Electric Sky (Systems Architecture & Technical Telemetry):**
-  - Distributed systems tracks, academic citation tags, terminal metrics.
-  - Tailwind: `text-cyan-600 dark:text-cyan-400`, `bg-cyan-500/10`, `border-cyan-500/20`.
-- **Coral & Rose (Capstone Drills & Advanced Challenges):**
-  - Socratic evaluations, high-intensity capstone drills, difficulty badges.
-  - Tailwind: `text-rose-600 dark:text-rose-400`, `bg-rose-500/10`, `border-rose-500/20`.
-- **Amethyst & Royal Purple (AI Agents & Frontier Solvers):**
-  - Quantum mechanics tracks, agentic reasoning indicators, learning platform badges.
-  - Tailwind: `text-purple-600 dark:text-purple-400`, `bg-purple-500/10`, `border-purple-500/20`.
-
-### 3.3 Bespoke CSS Classes & Glassmorphism
-
-Defined in `app/globals.css`:
-
-```css
-/* Glassmorphism with Specular Borders */
-.idle-glass {
-  background: rgba(245, 245, 248, 0.7);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 0.5px solid rgba(255, 255, 255, 0.85);
-  box-shadow: 0px 10px 40px -10px rgba(10, 10, 10, 0.08);
-}
-.dark .idle-glass {
-  background: rgba(18, 18, 20, 0.75);
-  border: 0.5px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0px 16px 40px -10px rgba(0, 0, 0, 0.4);
-}
-
-/* Institutional Card Surfaces */
-.idle-card {
-  background: var(--card);
-  color: var(--card-foreground);
-  border: 0.5px solid var(--border);
-  box-shadow: 0px 10px 40px -10px rgba(10, 10, 10, 0.06);
-  border-radius: 24px;
-  position: relative;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-.idle-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0px 16px 45px -10px rgba(10, 10, 10, 0.1);
-}
-
-/* Specular Inset Rim Highlight */
-.idle-inner-bevel {
-  box-shadow: inset 0px 0px 14px 0px rgba(255, 255, 255, 0.8);
-}
-.dark .idle-inner-bevel {
-  box-shadow: inset 0px 0px 14px 0px rgba(255, 255, 255, 0.06);
-}
-```
-
-### 3.4 Typography Hierarchy
-
-- **Primary Headings (`h1`, `h2`):** `font-bold tracking-[-0.03em] text-foreground`.
-- **Display Metrics & Numbers:** `font-mono tracking-tight` (used for valuations, check sizes, caps).
-- **Section Badges & Eyebrows:**
-  ```tsx
-  <span className="text-[11px] font-semibold tracking-[0.18em] uppercase text-muted-foreground">
-    APEX KRISH CAPITAL · SEC 506(c)
-  </span>
-  ```
-- **Body & Explanatory Copy:** `text-base text-muted-foreground leading-relaxed font-normal`.
+Run the checklist in section 12. Report what changed, what you verified and how, and anything you could not
+check, in plain words. Mention anything you changed outside the requested area.
 
 ---
 
-## 4. Component Architecture & UI File Map
+## 2. Visual direction
 
-```
-apexkrishcapital/
-├── app/
-│   ├── layout.tsx                     # Root layout, theme script, Clerk provider, fonts
-│   ├── page.tsx                       # Public landing page (Hero, Offerings, Focus Sectors, Fiduciary)
-│   ├── about/page.tsx                 # About Us & Investment Thesis
-│   ├── profile/page.tsx               # Investor Profile & Accreditation form route
-│   ├── admin/page.tsx                 # Operations Command Center route
-│   ├── investor-education/page.tsx    # SEC 506(c) Knowledge Base & SPV Guide
-│   └── globals.css                    # CSS variables, animations, glassmorphism utilities
-├── components/
-│   ├── navbar.tsx                     # Scroll-adaptive floating liquid glass navbar
-│   ├── HeroSection.tsx                # Hero section with animated status pill and dual CTAs
-│   ├── OfferingsSection.tsx           # Dynamic live deal room switcher, commit panel, past deals grid
-│   ├── BusinessApplicationSection.tsx # For Founders expandable modal portal
-│   ├── RequestAccessModal.tsx         # Request Allocation Access expandable modal portal
-│   ├── ProfileComponent.tsx           # Accreditation self-certification form with edge tooltips
-│   ├── AdminPage.tsx                  # 4-column deal command center & separated commitments tables
-│   ├── dark-mode-toggle.tsx           # Sun/Moon/System dropdown toggle
-│   ├── avatarbutton.tsx               # Clerk UserButton wrapper & user menu
-│   ├── ScrollRestorationManager.tsx   # Window scroll coordinator
-│   └── ui/                            # Shadcn UI primitives: button, card, select, dropdown-menu, expandable-screen, avatar
-```
+### 2.1 What "good" looks like here
+
+Editorial and quiet, like a design studio or a well-made magazine site. The direction that worked was
+taken from studio and boutique sites (fume-studio.com, iwonderu.se, noth.in). What they share:
+
+- **Full-bleed hero moments**, then calm sections with lots of empty space.
+- **Huge, tight display type** for statements (often 8–11vw), with one word set in a serif or the accent colour.
+- **Small labels in brackets**, in mono uppercase with wide tracking: `( How it works )`, `( 01 )`.
+- **Hairline rules** (`border-t` at about 15–20% foreground) to separate rows instead of cards and shadows.
+- **Asymmetric 12-column grids.** Label in columns 1–3, statement in 4–12; text on the left five columns, the working piece on the right six.
+- **Numbered chapters** (01, 02, 03…) for "how it works" style content.
+- **Few words per section.** One statement, one or two short paragraphs, one action.
+- **Dark bands** that interrupt a light page for emphasis, with soft edges (section 5.4).
+
+### 2.2 What to avoid
+
+These were all tried and rejected, or are tell-tale signs of generated UI:
+
+- Purple, pink or neon gradient blobs, glowing orbs, "aurora" backgrounds.
+- Grids of identical rounded cards with an icon, a title and two lines of text.
+- Glassmorphism everywhere, heavy drop shadows, and badges on everything.
+- Spotlight or hover-glow cards with fake metrics ("Topology: Strict DAG").
+- A whole stock UI kit swapped in, which the user rejected and reverted. Restyle what exists instead.
+- Scenes built on a photo that need pixel-exact overlays (text placed onto a photographed monitor). It is fragile across aspect ratios, and the user called it "very very bad".
+- Default browser controls: number spinners, unstyled `<select>` arrows, default focus glow.
+- Translucent shapes overlapping each other, which shows seams and muddy colours. Use opaque colours.
+
+### 2.3 When there are no photos
+
+Don't fake it with stock-looking AI art. Prefer **drawn graphics that mean something**:
+
+- **Generated SVG** that matches the product idea. For a "path" product, a topographic contour map with a route drawing up to a summit (`scripts/topo.py`).
+- **Type as image.** A huge outlined word (`-webkit-text-stroke`, transparent fill), for example the product name in its original script.
+- **Colour blocks.** Earthy solid tiles with a tiny diagram inside.
+
+If you do generate images:
+- **Style:** "35mm film, natural light, soft grain, muted warm palette, editorial photography, no text, no logos".
+- **Quota:** check first. The Gemini image models have a free-tier quota of 0, so they need a billed key. If the key is refused, say so and build without images. Don't stall.
+- **Credentials:** never read or test API keys the user hasn't pointed you to.
 
 ---
 
-## 5. Key UI Component Implementation Standards
+## 3. Typography
 
-### 5.1 Floating Liquid Glass Navbar (`components/navbar.tsx`)
+Use three families plus mono, each with one job:
 
-The navbar floats above page content with dynamic scroll-adaptive elevation:
-- **Unscrolled (`scrollY <= 30`):** `top-6 md:top-8`, `max-w-[1300px]`, `py-2.5 px-6`, subtle border.
-- **Scrolled (`scrollY > 30`):** `top-2.5 md:top-3.5`, `max-w-[1180px]`, `py-1.5 px-4 md:px-5`, higher blur, rim reflection, deeper shadow.
-- **Persona Switcher:** Pill toggle switching between `investors` and `founders`.
-- **CTA:** `Request Access` pill button triggering the expandable modal.
-- **Specular Reflection:**
-  ```tsx
-  <div className="pointer-events-none absolute inset-x-12 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/90 dark:via-white/40 to-transparent" />
-  ```
+| Role | Example | Use |
+| --- | --- | --- |
+| Display grotesk | Clash Display (Fontshare) | Headlines and statements. Weight 500 for editorial, 700+ only for small brand marks. |
+| Serif accent | Sprat or any characterful serif | One word or phrase inside a headline, big numbers (01, 02), pull quotes, role names. |
+| Readable sans | Atkinson Hyperlegible | All body copy, buttons, forms. |
+| Mono | `ui-monospace` | Bracketed labels, small meta (days, times), map labels. |
 
-### 5.2 Expandable Screen Modal System (`components/ui/expandable-screen.tsx`)
+The scale:
 
-Modals on ApexKrish do not use jarring standard popup dialogs; they use the `ExpandableScreen` architecture with morphing fullscreen presentation and event dispatchers:
+- **Hero:** `text-[clamp(3.1rem,8.4vw,8.75rem)] leading-[0.9] tracking-[-0.045em] font-medium`.
+- **Section statement:** `text-[clamp(2.1rem,4.6vw,4.5rem)] leading-[1.02] tracking-[-0.03em]`.
+- **Chapter title:** `text-3xl sm:text-[2.75rem] leading-[1.05]`.
+- **Body:** `text-base sm:text-lg leading-relaxed text-muted-foreground`, max width about `max-w-md` to `max-w-2xl`.
+- **Label:** `font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground`.
+- **Accent word:** `<span className="font-serif font-normal text-saffron">anything.</span>`. Use it once per heading at most.
+
+Other rules:
+
+- **`text-balance` on headings.** Make sure no long single word can overflow a small box. Size it with `clamp()` and test the longest real word ("Photosynthesis" broke tiles twice). Don't rely on `hyphens-auto`, because headless and some browsers don't hyphenate.
+- **Non-Latin scripts** need a font that has them. Load just the glyphs you use: `fonts.googleapis.com/css2?family=Noto+Serif+Kannada&text=<url-encoded chars>`.
+
+---
+
+## 4. Colour and theming
+
+### 4.1 Tokens
+
+- **Semantic tokens only:** `--background`, `--foreground`, `--card`, `--muted`, `--muted-foreground`, `--border`, plus named accents, exposed through Tailwind v4 `@theme inline`. Components never hard-code light or dark colours, except inside a deliberately fixed-dark band.
+- **One main accent** (saffron orange `#f97316` light / `#fb923c` dark) for the main action, the active state and the "you are here" marker.
+- **Colours carry meaning, consistently.** Orange is the main path or current item, cyan is a branch or secondary, green is done. Use the same meaning everywhere: graphs, lists, dots, progress.
+- **Accents are lighter in dark mode.** Redefine them under `.dark`.
+
+### 4.2 Both themes, always
+
+- Every element, dialog, toast and empty state must be readable in both themes. Two real bugs came from this: a delete dialog and a quota modal were unreadable in light mode because they used fixed dark colours. Build dialogs from tokens (`bg-card text-card-foreground border-border`).
+- **Fixed-dark bands** (hero, a feature band) use one warm black, such as `#0d0b09` with cream text `#f6efe6`, in both themes. Mark them `data-nav-dark` so a floating navbar can switch to its dark style while over them (section 7.3).
+- Avoid a flash of the wrong theme: set the theme class in a blocking script in `<head>`, and put `suppressHydrationWarning` on `<html>`.
+- **Colour mixing:** use `color-mix(in oklab, A x%, B)` rather than rgba stacks.
+- **Earthy tiles that work in both themes:** `#9a4a2a` terracotta, `#2e3550` indigo, `#5b6436` olive, `#2f5a55` teal, `#a0742a` ochre, `#5e3047` plum, each with cream text.
+
+---
+
+## 5. Layout and spacing
+
+### 5.1 The grid
+
+- Container: `mx-auto w-full max-w-7xl px-6 sm:px-10`.
+- Grid: `grid grid-cols-1 gap-x-10 gap-y-10 lg:grid-cols-12`.
+- Section rhythm: `py-24 sm:py-32` (`sm:py-36` for the first statement section). Rows inside a section: `py-14 sm:py-20` with `border-t border-foreground/15`.
+- A small label sits in the left 3 columns and lines up with the top of the statement (`lg:pt-3` or `lg:pt-4`).
+
+### 5.2 The chapter pattern
 
 ```tsx
-// Opening a modal programmatically from any component:
-window.dispatchEvent(
-  new CustomEvent("open-expandable-screen", {
-    detail: { layoutId: "request-access-portal" }, // or "founder-raise-portal"
-  })
-);
-
-// Closing a modal programmatically:
-window.dispatchEvent(
-  new CustomEvent("close-expandable-screen", {
-    detail: { layoutId: "request-access-portal" },
-  })
-);
+<section className="border-t border-foreground/15 py-14 sm:py-20">
+  <div className="grid grid-cols-1 gap-x-10 gap-y-10 lg:grid-cols-12">
+    <div className="lg:col-span-5">
+      <div className="flex items-baseline gap-4">
+        <span className="font-serif text-5xl leading-none text-saffron sm:text-6xl">01</span>
+        <Label>Say where</Label>
+      </div>
+      <h3 className="mt-8 font-display text-3xl font-medium leading-[1.05] tracking-[-0.02em] sm:text-[2.75rem]">
+        Tell us where you want to get to.
+      </h3>
+      <div className="mt-5 max-w-md space-y-3 text-base leading-relaxed text-muted-foreground sm:text-lg">…</div>
+    </div>
+    <div className="lg:col-span-6 lg:col-start-7">{/* the working demo, not a picture of it */}</div>
+  </div>
+</section>
 ```
 
-#### Scroll Lock Guard
-When Radix UI opens selects inside modals, it locks document scrolling. To prevent layout jerking, `globals.css` enforces:
-```css
-body[data-scroll-locked]:has([data-slot="select-content"]) {
-  overflow-y: scroll !important;
-  margin-right: 0 !important;
-  padding-right: 0 !important;
-}
-```
+Show **working pieces** (a real form, a clickable sample plan) instead of screenshots of the product.
 
-### 5.3 Live Deal Room & Commitment Panel (`components/OfferingsSection.tsx`)
+### 5.3 Hero composition
 
-The deal room is the highest-conversion UI surface:
-- **Active Deal Switcher:** Horizontal list of live SPVs (e.g., Micro1 Inc.) with round badges (`Active SPV Allocation`, `Direct Equity SPV`).
-- **Interactive Check Selector:** Quick-fill preset buttons for verified investors:
-  - `$5,000` (Minimum check entry)
-  - `$10,000`
-  - `$25,000`
-  - `$50,000`
-  - Custom numeric input with formatting (`minCheckNum: 5000`).
-- **Verification Status Banners:** If an investor is unverified, show a clean, high-contrast banner with direct contact links (`syndicate@apexkrishcapital.com` and `720-845-6839`).
-- **Admin In-Place Controls:** For `role === 'admin'`, live cards display quick-action buttons for **Broadcast**, **Close Deal**, and **Delete Deal**.
-- **Past Offerings Grid:** 3-column responsive grid displaying closed vehicles (Valuation, Check Size, Closed Month/Year badge like `Jul 2026`).
+- `h-[100svh] min-h-[620px]`, content pinned to the bottom: a label, a huge headline, then a hairline row with `( Scroll ) ↓` | one-sentence description | primary button and a text link.
+- Keep graphics off the text. If a graphic would cross the headline, move it or give phones their own composition. On a phone the text fills the lower half, so draw a shorter version of the graphic in the top half.
+- Shade only under the text, with a radial gradient behind the graphic layer, never over it, so the graphic stays crisp.
+- **Overlays on an image** must use the same coordinate system as the image. Give an SVG the same `viewBox` as the art, with `preserveAspectRatio="xMidYMid slice"` matching `object-fit: cover`. Change the alignment on phones (`xMaxYMid` plus `object-right`).
 
-### 5.4 Edge-Aware Accreditation Tooltips (`components/ProfileComponent.tsx`)
+### 5.4 Soft edges between dark and light
 
-When displaying SEC investor status options (`Accredited investor(1M+)`, `Qualified client(2M+)`, `Qualified purchaser(5M+)`), use portal-rendered tooltips that dynamically calculate viewport bounds to prevent clipping:
-- Checks `rect.left - margin - dialogWidth >= 0` for left-placement.
-- Falls back to right-side or bottom-docked placement on smaller viewports (`< 640px`).
-- Automatically dismisses on window scroll or resize.
+Never end a dark band on a hard line. Use two things together:
 
-### 5.5 Multi-Opportunity Administrative Command Center (`components/AdminPage.tsx`)
+1. **The band's graphics fade out near the edge.** A sharp copy masked out near the edge, plus a `blur-[3px]` copy masked to show only in the edge zone, so the lines go soft and then disappear:
+   ```ts
+   const sharp   = "linear-gradient(to bottom, transparent 0%, black 30%, black 70%, transparent 100%)";
+   const blurred = "linear-gradient(to bottom, transparent 0%, black 14%, transparent 34%, transparent 66%, black 86%, transparent 100%)";
+   ```
+2. **An eased colour hand-over** about a quarter of the screen tall, placed between the band and the page (`h-[26vh] min-h-32`):
+   ```css
+   .band-fade-out { background: linear-gradient(to bottom,
+     var(--band-dark) 0%,
+     color-mix(in oklab, var(--band-dark) 92%, var(--background)) 14%,
+     color-mix(in oklab, var(--band-dark) 75%, var(--background)) 30%,
+     color-mix(in oklab, var(--band-dark) 50%, var(--background)) 50%,
+     color-mix(in oklab, var(--band-dark) 25%, var(--background)) 70%,
+     color-mix(in oklab, var(--band-dark) 8%,  var(--background)) 86%,
+     var(--background) 100%); margin-top: -1px; }
+   ```
+   Use the same gradient with `to top` above the band. A plain two-stop gradient shows visible start and end lines; the eased stops hide them.
 
-- **4-Column Responsive Grid:** Live metrics for total allocation cap, wired funds, commitment progress bars, and investor count.
-- **Separated Commitments Tables:**
-  - **Active Commitments Table:** Live checks with inline status dropdown (`Active`, `Wire Received`, `Allocated`, `Cancelled`).
-  - **Closed Deals Archive Table:** Historical records tagged with date of deal closure.
-- **Filter Bar:** Search query input, sector filter, status filter, and pitch deck availability toggle.
-- **CSV Export:** Context-aware export generating downloadable reports formatted for operations.
+### 5.5 Lists on overview pages
+
+Show a **maximum of 3–4 items** with a "See all N in Studio →" link when there are more. Overview pages
+summarise; they are not the full list.
 
 ---
 
-## 6. Buttons, Inputs & Micro-Interactions
+## 6. Motion
 
-### 6.1 Button Variants (`components/ui/button.tsx`)
+Motion should explain something (a path being walked, a page coming into focus), never decorate. Every
+animation needs a `prefers-reduced-motion: reduce` fallback that shows the end state.
 
-- **Primary Action (High-Conversion Pill):**
-  ```tsx
-  <Button className="h-11 px-6 rounded-full font-bold text-xs tracking-wider uppercase bg-foreground text-background hover:bg-foreground/90 transition-all cursor-pointer shadow-xs active:scale-95">
-    Commit Capital
-  </Button>
-  ```
-- **Secondary / Ghost Pill:**
-  ```tsx
-  <Button variant="outline" className="h-11 px-6 rounded-full font-semibold text-xs tracking-wider uppercase border-border hover:bg-muted transition-all cursor-pointer">
-    Express Interest
-  </Button>
-  ```
-- **Icon / Micro Button:**
-  ```tsx
-  <Button size="icon" variant="ghost" className="size-9 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground">
-    <ArrowUpRight className="size-4" />
-  </Button>
-  ```
+| Pattern | How | Timing |
+| --- | --- | --- |
+| Page intro | Content starts `opacity:0; filter:blur(28px); scale(1.04)` and goes to clear | opacity 900ms ease-out, blur 1100ms `cubic-bezier(.33,1,.68,1)` |
+| Hero text rise | `opacity 0 → 1`, `translateY(24px) → 0`, second row delayed 250ms | 1s `cubic-bezier(.2,.7,.2,1)` |
+| Scroll reveal | IntersectionObserver, `rootMargin: "0px 0px -12% 0px"`, reveal once then disconnect | 0.9s, stagger 90–120ms |
+| Line drawing | SVG `pathLength={1}`, `stroke-dasharray:1; stroke-dashoffset:1 → 0` | 2.6s `cubic-bezier(.65,0,.35,1)` |
+| Stops along a line | fade in one by one, delays matched to where the line reaches them | 380ms apart |
+| Goal marker | a ring scaling `1 → 1.9` while fading, repeating | 2.8s, starts after the draw |
+| Hover | lift `-translate-y-1`, an arrow nudging `translate-x-1`, a line filling its width | 300–700ms ease-out |
 
-### 6.2 Form Inputs & Selects
+Other rules:
 
-- Use `components/ui/select.tsx` with Radix primitives.
-- Input fields should have rounded-xl or rounded-lg styling with hairline borders:
-  ```tsx
-  className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-foreground focus:outline-none focus:ring-1 focus:ring-foreground transition"
-  ```
-- Error states must display inline with `AlertCircle` and `text-xs text-destructive`.
-
-### 6.3 Loading & Async Feedback
-
-- Always disable triggers during pending network states.
-- Render Lucide's `Loader2 className="size-4 animate-spin"` next to descriptive text:
-  ```tsx
-  {isSubmitting ? (
-    <>
-      <Loader2 className="size-4 animate-spin" />
-      <span>Securing Allocation...</span>
-    </>
-  ) : (
-    <span>Confirm Commitment</span>
-  )}
-  ```
+- Start hero animations when the intro hands over, not on mount. Pass a `drawn` or `revealed` prop down.
+- If an intro gets longer, say by how much. Intros longer than about 4s get annoying, so offer "Press Esc to skip".
+- Smooth scrolling (Lenis) is fine. Anchor jumps should use it, with an offset for floating chrome.
 
 ---
 
-## 7. Strict UI Rules for AI Agents
+## 7. UX patterns that worked
 
-1. **Never break dark mode:** Every new element, card, or modal must be tested in both light (`html`) and dark (`html.dark`) modes.
-2. **Never change standard financial figures:**
-   - Minimum check size is **$5,000 USD** (not $10K, not $25K, not $50K).
-   - Syndicate carry is **10% performance carry** (half of industry 20%).
-   - Management fee is **2% minimum**.
-   - Founder raise target is **$200K and above** with **30-day close**.
-3. **Preserve the brand logo:** Always use `/apexkrishnalogo.png` with appropriate aspect ratio and never replace it with generic font placeholders.
-4. **Preserve clean responsive breakpoints:**
-   - Mobile: `< 640px` (single column, full-width buttons, collapsible menus).
-   - Tablet: `640px – 1024px` (2 columns, compact floating navbar).
-   - Desktop: `> 1024px` (max container `1150px` for landing page, `1300px` for floating navbar, multi-column tables).
-5. **No inline style hacks:** Use Tailwind CSS v4 utility classes and existing CSS variables in `globals.css`.
-6. **No Flash of Unstyled Theme (FOIT):** Any root layout modifications must preserve the synchronous theme detection script in `<head>` of `app/layout.tsx`.
+### 7.1 Forms
+
+- **Fill-in sentence** instead of a form: "I want to learn [classical guitar] in [− 14 +] days, with [− 2 +] hours a day." Underlined inputs (`border-b-2 border-saffron/50`, focus at full saffron), and the placeholder is a real example.
+- **Custom number stepper**, never `<input type=number>` spinners. Minus and plus buttons (`size-7`, round, with an `after:-inset-1.5` hit area), typing allowed, arrow keys work, clamped to min, max and step, the buttons `tabIndex={-1}` because the arrow keys cover them, `aria-label="More: Hours a day"`, disabled at the limits.
+- **Presets open the real dialog already filled in.** A global `startPath(preset)` dispatches a `CustomEvent` that one dialog listens for. Use one dialog app-wide, never copies.
+- **Keep unfinished intent across sign-in.** Save the pending form in `sessionStorage` before redirecting to login, and restore it after.
+- **Auth:** login, sign-up, forgot password and reset password all share one form shell. Translate errors into plain sentences ("That email and password don't match"). Only redirect to same-site paths: reject `//`, `/\` and absolute URLs.
+
+### 7.2 Feedback and states
+
+- **Loading:** a small spinner plus words ("Loading paths"), and a safety timeout (about 2.5s) so a spinner can never hang forever.
+- **Empty and error states:** one plain sentence saying what happened and what to do ("Your paths could not be loaded. Refresh the page to try again.").
+- **Greet with real data or nothing.** Don't show "Hey Architect" and then swap to the name. Wait for the user, or render a neutral greeting that doesn't change.
+- **Show real numbers.** Usage pages show actual counts. Never show a fake "Upgrade to Pro, free" button or invented metrics.
+- **AI features** carry a quiet honesty line: "Daari can make mistakes, so check anything important."
+
+### 7.3 Navigation chrome
+
+- A floating navbar has no full-width bar and no bottom border. It sits in the corners with a centred mark.
+- Over dark bands it inverts. Check every `[data-nav-dark]` element on scroll and resize, and switch while one covers the bar (`top <= 40 && bottom > 60`).
+- Link text over icons for secondary items. The user asked for "About" as a word, not an icon.
+
+### 7.4 Making an AI feature feel unique
+
+Don't build a plain Q&A box. Give the agent a visible method: for example, write down what the learner
+believes, find the weakest part, try to break it, and show "Contradicted" or "Holds" verdicts. Every
+judged answer must produce a verdict; "Not graded" on a good answer is a bug.
+
+---
+
+## 8. Copy and voice
+
+The user's repeated feedback was "make it human" and "too complicated".
+
+- Write at a friendly, plain level: short sentences, everyday words, active voice.
+- Prefer **naming what it does**: "The planner splits your subject into days" beats "Chronological Day Decomposer".
+- No hype words: revolutionary, unlock, supercharge, seamless, next-gen, cutting-edge, "redefining limits".
+- Headlines are a promise in under eight words: "Find your way into anything." / "The first step is small."
+- Use the same name for one thing everywhere: Paths, Usage, Start. When renaming, rename everywhere, including page titles, emails, metadata, alt text, error messages and README.
+- A product name with personal meaning deserves a sentence that explains it, e.g. "The name is Kannada for *path*."
+- Use real-sounding examples (Classical guitar, Chess openings, Photosynthesis), never "Lorem" or "Topic 1".
+
+---
+
+## 9. Accessibility (non-negotiable)
+
+- Use real `<button>` and `<a>` elements, with `cursor-pointer` and `focus-visible:outline-2 focus-visible:outline-offset-2`, and an outline colour that shows on the background behind it.
+- Decorative graphics get `aria-hidden="true"` and `alt=""`. Meaningful images get real alt text.
+- Icon-only buttons need an `aria-label`. Keep hit areas at least 32px; extend them with `after:absolute after:-inset-1.5`.
+- Body text must meet contrast in both themes. Muted text on dark bands should be at least about 60% cream.
+- Respect `prefers-reduced-motion` everywhere (section 6).
+- Hidden UI must also be `pointer-events-none` and out of the tab order.
+
+---
+
+## 10. Responsive
+
+- Check at **1920×1080, 1440×900, 1366×768, 1024×768 and 390×844** (mobile emulation).
+- No horizontal scroll: `document.documentElement.scrollWidth - innerWidth` must be 0.
+- Phones get their own composition when needed, not just a shrunk desktop: a separate SVG route, `object-right`, hidden meta words (`<span className="hidden xl:inline"> a day</span>`).
+- Tiles: 2 columns on phones, 3 on desktop, `aspect-[4/5]` or `aspect-[5/6]`, with the longest real label tested at each width.
+- For overlays sized to a picture, container queries (`container-type: size` plus `cqw`) keep proportions. Avoid relying on photo-exact overlays at all (section 2.2).
+
+---
+
+## 11. Verification with screenshots
+
+Use `scripts/shoot.mjs` (headless Chrome over the DevTools protocol, no npm install needed; needs Node 20+ and `google-chrome`):
+
+```bash
+# Full scroll-through, both themes, all five sizes, into ./shots
+node --experimental-websocket .agent/skills/ui/scripts/shoot.mjs http://localhost:3000/ ./shots
+# Reference sites: one size, dark only, longer wait
+node --experimental-websocket .agent/skills/ui/scripts/shoot.mjs https://example.com ./refs --sizes 1440x900 --themes none --wait 9000
+```
+
+The script:
+- sets the theme through `localStorage` (`--theme-key`, default `theme`) before load;
+- waits out any intro (`--wait`, default 10000ms);
+- scrolls the page taking one screenshot per screen;
+- prints console errors and horizontal overflow for each size.
+
+Then **look at the images**. Check that:
+- text isn't crossing graphics;
+- nothing is clipped at the edges;
+- labels don't overflow;
+- dialogs are readable in both themes;
+- the navbar style is right over each band;
+- edges between bands are soft.
+
+Also capture mid-animation frames (for example 700ms and 1300ms after load) when changing an intro.
+
+Things headless can't do: it isn't signed in (so it can't check user-only data) and it can't receive email.
+Say so in the report rather than claiming it was verified.
+
+---
+
+## 12. Done checklist
+
+- [ ] Existing tokens, fonts and components reused; no parallel design system.
+- [ ] All behaviour from before still works (forms, auth, data, anchors, links).
+- [ ] Copy is plain, short and human; no jargon, hype or fake features; names consistent.
+- [ ] Light and dark both checked, including dialogs and empty or error states.
+- [ ] 1920, 1440, 1366, 1024 and 390 checked; no horizontal overflow; longest labels fit.
+- [ ] Graphics never cross text; phones have their own composition where needed.
+- [ ] Dark bands have soft edges and set `data-nav-dark`.
+- [ ] Animations have reduced-motion fallbacks and start at the right moment.
+- [ ] Focus outlines visible, aria labels present, decorative art hidden from screen readers.
+- [ ] Zero console errors; type check passes; no new lint errors in touched files (say which errors already existed).
+- [ ] Report: what changed, how it was verified, what wasn't verified, anything touched outside scope.
+
+---
+
+## 13. Framework gotchas (Next.js 16, React 19, Tailwind v4)
+
+- **Read the bundled docs.** Next 16 differs from older versions; read `node_modules/next/dist/docs/` before using an unfamiliar API.
+- **Stale styles.** If Turbopack stops generating new Tailwind classes, stop the dev server, run `rm -rf .next/dev`, and restart. A stale `.next/types` that points at a deleted route needs `rm -rf .next/types`.
+- **Hydration.** Never read `localStorage`, `window`, `Date.now()` or the user's time during render. Render a stable placeholder, then fill it in after mount, aligned to the next minute for clocks. Keep "was this an internal navigation" flags in memory, not in storage that differs between server and client.
+- **Effects.** Don't call `setState` synchronously at the top of an effect for values you could compute up front. Derive them, or use a lazy `useState(() => …)`.
+- **Tailwind v4.** Use `@theme inline` for tokens, `@custom-variant dark (&:where(.dark, .dark *))` for class-based dark mode, arbitrary values like `text-[clamp(...)]` and `[mask-image:...]`, and the `has-*` and `group-*` variants.
+- **Images.** Plain `<img>` is fine for decorative SVG; add `{/* eslint-disable-next-line @next/next/no-img-element */}`.
+- **Long AI calls on the server.** Don't block an async request handler with a synchronous call. Use sync handlers in a thread pool or real async, always with timeouts, or one slow call freezes the whole backend.
