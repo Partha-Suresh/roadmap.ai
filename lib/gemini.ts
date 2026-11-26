@@ -1,3 +1,5 @@
+import { readGeminiUsage, type TokenUsage } from "@/lib/usage";
+
 const MODELS = Array.from(
   new Set([
     process.env.GEMINI_MODEL || "gemini-flash-lite-latest",
@@ -25,14 +27,14 @@ export async function generateJson<T>(
   schema: object,
   validate: (value: unknown) => T | null,
   { deadlineMs = 30000, temperature = 0.6 } = {}
-): Promise<T> {
+): Promise<{ value: T; usage: TokenUsage }> {
   const apiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("No Gemini API key configured");
 
   const controller = new AbortController();
   const deadline = setTimeout(() => controller.abort(), deadlineMs);
 
-  const attempt = async (model: string): Promise<T> => {
+  const attempt = async (model: string): Promise<{ value: T; usage: TokenUsage }> => {
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
@@ -53,11 +55,11 @@ export async function generateJson<T>(
     const parts: Array<{ text?: string }> = data.candidates?.[0]?.content?.parts ?? [];
     const value = validate(JSON.parse(parts.map((p) => p.text ?? "").join("")));
     if (value === null) throw new Error(`${model} returned an unexpected shape`);
-    return value;
+    return { value, usage: readGeminiUsage(data) };
   };
 
   try {
-    return await new Promise<T>((resolve, reject) => {
+    return await new Promise<{ value: T; usage: TokenUsage }>((resolve, reject) => {
       let started = 0;
       let failed = 0;
       const errors: string[] = [];

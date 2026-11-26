@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/client";
 import { synthesizeResearchedLesson } from "@/lib/knowledge-engine";
+import { NO_USAGE, addUsage, parseUsage, totalTokens, type TokenUsage } from "@/lib/usage";
 
 export interface SupabaseTopic {
   id: string;
@@ -496,7 +497,8 @@ export async function fetchDayTopicsWithAgent2(
   dayTitle: string = "",
   learningObjectives: string[] = [],
   dayDescription: string = "",
-  skillLevel: string = "intermediate"
+  skillLevel: string = "intermediate",
+  onUsage?: (usage: TokenUsage) => void
 ): Promise<Array<{ topic_number: number; title: string; description: string; estimated_minutes: number }>> {
   if (typeof window !== "undefined") {
     try {
@@ -517,6 +519,7 @@ export async function fetchDayTopicsWithAgent2(
       if (res.ok) {
         const data = await res.json();
         if (data && Array.isArray(data.topics) && data.topics.length > 0) {
+          onUsage?.(parseUsage(data.usage));
           return data.topics;
         }
       }
@@ -805,79 +808,8 @@ export function buildSampleDays(roadmap: RoadmapSummary): SupabaseDay[] {
   });
 }
 
-export async function getUserActiveRoadmap(userId: string) {
-  if (!userId || userId === "guest") return null;
-
-  try {
-    const supabase = createClient();
-
-    // 1. Fetch latest active roadmap for this user (sorted by last accessed)
-    const { data: roadmap, error: rError } = await supabase
-      .from("roadmaps")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("status", "active")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (rError || !roadmap) {
-      return null;
-    }
-
-    // 2. Fetch days
-    const { data: days, error: dError } = await supabase
-      .from("roadmap_days")
-      .select("*")
-      .eq("roadmap_id", roadmap.id)
-      .order("day_number", { ascending: true });
-
-    if (dError || !days) {
-      return { roadmap, days: [] };
-    }
-
-    // 3. Fetch all topics for this roadmap
-    const { data: topics } = await supabase
-      .from("roadmap_topics")
-      .select("*")
-      .eq("roadmap_id", roadmap.id)
-      .order("topic_number", { ascending: true });
-
-    const topicsByDay: Record<string, SupabaseTopic[]> = {};
-    (topics || []).forEach((t: any) => {
-      if (!topicsByDay[t.day_id]) topicsByDay[t.day_id] = [];
-      topicsByDay[t.day_id].push({
-        id: t.id,
-        day_id: t.day_id,
-        roadmap_id: t.roadmap_id,
-        topic_number: t.topic_number,
-        title: t.title,
-        description: t.description || "",
-        estimated_minutes: t.estimated_minutes || 45,
-        status: t.status || "not_started",
-      });
-    });
-
-    const structuredDays: SupabaseDay[] = days.map((d: any) => ({
-      id: d.id,
-      roadmap_id: d.roadmap_id,
-      day_number: d.day_number,
-      title: d.title,
-      description: d.description || "",
-      learning_objectives: d.learning_objectives || [],
-      status: d.status || "not_started",
-      topics: topicsByDay[d.id] || [],
-    }));
-
-    return {
-      roadmap,
-      days: structuredDays,
-    };
-  } catch (err) {
-    console.warn("getUserActiveRoadmap notice (offline/network error):", err);
-    return null;
-  }
-}
+/** Rough size of planning one day, only to check there is room for it */
+const PLAN_TOKENS_PER_DAY = 1500;
 
 export async function saveRoadmapToSupabase(
   userId: string,
@@ -886,8 +818,9 @@ export async function saveRoadmapToSupabase(
   dailyHours: number,
   skillLevel: string = "intermediate"
 ) {
-  // Pre-flight quota check: ensure user has quota for roadmap synthesis (~15,400 tokens)
-  await assertUserTokenBudget(userId, 15400);
+  // Check there is room before starting; what it really used is recorded at the end
+  await assertUserTokenBudget(userId, totalDays * PLAN_TOKENS_PER_DAY);
+  let planUsage = NO_USAGE;
 
   const supabase = createClient();
   const archetype = classifyDomain(domain);
@@ -947,7 +880,11 @@ export async function saveRoadmapToSupabase(
       day.day_number,
       day.title,
       day.learning_objectives,
-      day.description
+      day.description,
+      skillLevel,
+      (usage) => {
+        planUsage = addUsage(planUsage, usage);
+      }
     );
     for (const t of topicsForThisDay) {
       allTopicRecords.push({
@@ -1001,11 +938,7 @@ export async function saveRoadmapToSupabase(
     });
   }
 
-  // 5. Atomically log and consume tokens dynamically in Supabase
-  await consumeTokensInDb(userId, 15400, "Agent 1: Roadmap Structure", {
-    promptTokens: 4200,
-    completionTokens: 11200,
-  });
+  await consumeTokensInDb(userId, planUsage, "Agent 2: Daily Structure");
 
   return {
     roadmap,
@@ -1216,6 +1149,7 @@ export async function getOrSaveLessonFromSupabase(
 
     // 3. Attempt live research & teaching via Next.js /api/teach endpoint
     let liveLesson: SupabaseLesson | null = null;
+    let lessonUsage = NO_USAGE;
     try {
       if (typeof window !== "undefined") {
         const res = await fetch("/api/teach", {
@@ -1241,6 +1175,7 @@ export async function getOrSaveLessonFromSupabase(
             data.content_markdown &&
             !data.content_markdown.includes("In this institutional module on")
           ) {
+            lessonUsage = parseUsage(data.usage);
             liveLesson = {
               topic_id: topicId,
               content_markdown: data.content_markdown,
@@ -1257,25 +1192,24 @@ export async function getOrSaveLessonFromSupabase(
 
     const lessonToPersist: SupabaseLesson = liveLesson || fallbackLesson;
 
+    // The AI call was made whether or not the lesson can be saved
+    if (totalTokens(lessonUsage) > 0) {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) await consumeTokensInDb(user.id, lessonUsage, "Agent 3: Daily Teacher");
+      } catch {
+        // non-fatal
+      }
+    }
+
     // 4. Upsert into topic_lessons in Supabase to permanently persist for all users
     const { data: inserted, error } = await supabase
       .from("topic_lessons")
-      .upsert(lessonToPersist)
+      .upsert(lessonToPersist, { onConflict: "topic_id" })
       .select()
       .maybeSingle();
 
     if (inserted && !error) {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          await consumeTokensInDb(user.id, 2400, "Agent 3: Daily Teacher", {
-            promptTokens: 800,
-            completionTokens: 1600,
-          });
-        }
-      } catch {
-        // non-fatal
-      }
       return inserted as SupabaseLesson;
     }
 
@@ -1297,7 +1231,7 @@ export class TokenQuotaExceededError extends Error {
     currentUsed: number,
     maxLimit: number,
     resetDate: string = "Next Billing Cycle",
-    tier: string = "Starter Allocation"
+    tier: string = "Free"
   ) {
     super(message);
     this.name = "TokenQuotaExceededError";
@@ -1326,7 +1260,7 @@ export async function assertUserTokenBudget(
 }> {
   // 1. Guest / Local Mode Check
   if (!userId || userId === "guest" || userId.startsWith("guest-") || userId.startsWith("local-")) {
-    let guestUsed = 34500;
+    let guestUsed = 0;
     const guestLimit = 250000;
     const now = new Date();
     const fallbackResetDate = new Date(now.getFullYear(), now.getMonth() + 1, 1).toLocaleDateString("en-US", {
@@ -1356,7 +1290,7 @@ export async function assertUserTokenBudget(
         );
       }
       throw new TokenQuotaExceededError(
-        `Monthly reasoning token budget exhausted (${guestUsed.toLocaleString()} / ${guestLimit.toLocaleString()} tokens). Please upgrade to Pro to continue.`,
+        `This month's AI usage is used up (${guestUsed.toLocaleString()} / ${guestLimit.toLocaleString()} tokens). It starts again next month.`,
         guestUsed,
         guestLimit,
         fallbackResetDate,
@@ -1394,7 +1328,7 @@ export async function assertUserTokenBudget(
       .maybeSingle();
 
     const isPro = profile?.subscription_tier === "pro" || budget?.max_tokens_monthly === 2500000;
-    const userTier = isPro ? "Institutional Pro" : "Starter Allocation";
+    const userTier = isPro ? "Pro" : "Free";
     let currentUsed = budget?.tokens_used_current_cycle ?? 0;
     let maxLimit = budget?.max_tokens_monthly ?? (isPro ? 2500000 : 250000);
     const now = new Date();
@@ -1451,7 +1385,7 @@ export async function assertUserTokenBudget(
       }
 
       throw new TokenQuotaExceededError(
-        `Monthly reasoning token budget exhausted (${currentUsed.toLocaleString()} / ${maxLimit.toLocaleString()} tokens). Please upgrade to Pro to continue.`,
+        `This month's AI usage is used up (${currentUsed.toLocaleString()} / ${maxLimit.toLocaleString()} tokens). It starts again next month.`,
         currentUsed,
         maxLimit,
         resetDate,
@@ -1478,136 +1412,40 @@ export async function assertUserTokenBudget(
       maxLimit: 250000,
       remaining: 250000,
       resetDate: "Next Billing Cycle",
-      tier: "Starter Allocation",
+      tier: "Free",
     };
   }
 }
 
+/** Adds what an AI call used to the person's monthly total */
 export async function consumeTokensInDb(
   userId: string | undefined,
-  tokens: number,
-  agentName: string = "Agent 1: Roadmap Structure",
-  details?: { promptTokens?: number; completionTokens?: number }
-): Promise<number> {
-  // Pre-flight assertion: throw and block if quota reached
-  await assertUserTokenBudget(userId, tokens);
-
-  const pTokens = details?.promptTokens ?? Math.round(tokens * 0.35);
-  const cTokens = details?.completionTokens ?? (tokens - pTokens);
-
-  // If in guest mode, track in localStorage and notify listeners
-  if (!userId || userId === "guest" || userId.startsWith("guest-") || userId.startsWith("local-")) {
-    if (typeof window !== "undefined") {
-      const current = parseInt(localStorage.getItem("roadmap_guest_tokens_used") || "34500", 10);
-      const updated = current + tokens;
-      localStorage.setItem("roadmap_guest_tokens_used", String(updated));
-      window.dispatchEvent(new CustomEvent("roadmap-tokens-updated", {
-        detail: { userId: "guest", tokensConsumed: tokens, totalTokens: updated, agentName }
-      }));
-      return updated;
-    }
-    return tokens;
-  }
+  usage: TokenUsage,
+  agentName: string
+): Promise<void> {
+  const tokens = totalTokens(usage);
+  if (tokens <= 0 || !userId || userId === "guest" || userId.startsWith("guest-") || userId.startsWith("local-")) return;
 
   try {
     const supabase = createClient();
-    let newTokensTotal: number | null = null;
 
-    // 1. Try atomic PostgreSQL RPC increment_token_budget
-    try {
-      const { data, error } = await supabase.rpc("increment_token_budget", {
-        p_user_id: userId,
-        p_tokens: tokens,
-      });
-      if (error) {
-        if (error.message?.includes("TOKEN_QUOTA_EXCEEDED") || error.details?.includes("TOKEN_QUOTA_EXCEEDED")) {
-          throw new TokenQuotaExceededError(error.message, 250000, 250000);
-        }
-      } else if (typeof data === "number") {
-        newTokensTotal = data;
-      }
-    } catch (rpcErr: any) {
-      if (rpcErr instanceof TokenQuotaExceededError) {
-        throw rpcErr;
-      }
-    }
+    const { error } = await supabase.rpc("increment_token_budget", { p_user_id: userId, p_tokens: tokens });
+    if (error) console.warn("Usage could not be recorded:", error.message);
 
-    // 2. Direct fallback to public.token_budgets table in Supabase
-    if (newTokensTotal === null) {
-      const { data: existing } = await supabase
-        .from("token_budgets")
-        .select("tokens_used_current_cycle, max_tokens_monthly, cycle_resets_at")
-        .eq("user_id", userId)
-        .maybeSingle();
+    const { error: logError } = await supabase.from("agent_execution_logs").insert({
+      user_id: userId,
+      agent_name: agentName,
+      prompt_tokens: usage.promptTokens,
+      completion_tokens: usage.completionTokens,
+      latency_ms: 0,
+      status: "success",
+    });
+    if (logError) console.debug("agent_execution_logs insert notice (non-fatal):", logError.message);
 
-      const existingUsed = existing?.tokens_used_current_cycle || 0;
-      const maxMonthly = existing?.max_tokens_monthly || 250000;
-
-      if (existingUsed + tokens > maxMonthly) {
-        throw new TokenQuotaExceededError(
-          `Monthly reasoning token budget exhausted (${existingUsed.toLocaleString()} / ${maxMonthly.toLocaleString()} tokens).`,
-          existingUsed,
-          maxMonthly
-        );
-      }
-
-      newTokensTotal = existingUsed + tokens;
-
-      await supabase
-        .from("token_budgets")
-        .upsert({
-          user_id: userId,
-          tokens_used_current_cycle: newTokensTotal,
-          max_tokens_monthly: maxMonthly,
-          updated_at: new Date().toISOString(),
-        });
-    }
-
-    // 3. Insert audit log into agent_execution_logs
-    try {
-      const tokenCost = ((pTokens * 0.0000015) + (cTokens * 0.000002)).toFixed(6);
-      await supabase.from("agent_execution_logs").insert({
-        user_id: userId,
-        agent_name: agentName,
-        prompt_tokens: pTokens,
-        completion_tokens: cTokens,
-        total_cost_usd: parseFloat(tokenCost),
-        latency_ms: 310,
-        status: "success",
-      });
-    } catch (logErr) {
-      console.debug("agent_execution_logs insert notice (non-fatal):", logErr);
-    }
-
-    // 4. Notify any live client-side UI listeners (navbar pill, billing metrics)
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("roadmap-tokens-updated", {
-        detail: { userId, tokensConsumed: tokens, totalTokens: newTokensTotal, agentName }
-      }));
-    }
-
-    return newTokensTotal ?? tokens;
+    if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("roadmap-tokens-updated"));
   } catch (err) {
-    if (err instanceof TokenQuotaExceededError) {
-      throw err;
-    }
     console.debug("consumeTokensInDb notice:", err);
-    return tokens;
   }
-}
-
-export async function logAgentExecution(
-  userId: string,
-  agentName: string,
-  promptTokens: number = 300,
-  completionTokens: number = 600,
-  latencyMs: number = 350
-) {
-  if (!userId || userId === "guest" || userId.startsWith("guest-") || userId.startsWith("local-")) return;
-  await consumeTokensInDb(userId, promptTokens + completionTokens, agentName, {
-    promptTokens,
-    completionTokens,
-  });
 }
 
 export async function updateTopicStatusInSupabase(
@@ -1621,21 +1459,6 @@ export async function updateTopicStatusInSupabase(
       .from("roadmap_topics")
       .update({ status })
       .eq("id", topicId);
-
-    // If marked completed, atomically consume verification tokens dynamically in Supabase DB
-    if (status === "completed") {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          await consumeTokensInDb(user.id, 1200, "Agent 2: Topic Mastery Verifier", {
-            promptTokens: 400,
-            completionTokens: 800,
-          });
-        }
-      } catch {
-        // non-blocking
-      }
-    }
   } catch (err) {
     console.debug("updateTopicStatusInSupabase notice:", err);
   }
@@ -1660,235 +1483,41 @@ export async function getTopicByIdFromSupabase(topicId: string) {
   return null;
 }
 
-export async function updateUserSubscriptionData(
-  userId: string | undefined,
-  tier: "starter" | "pro"
-) {
-  const maxTokens = tier === "pro" ? 2500000 : 250000;
-  if (typeof window !== "undefined") {
-    localStorage.setItem("user_subscription_tier", tier);
-  }
-
-  if (!userId || userId === "guest" || userId.startsWith("guest-") || userId.startsWith("local-")) {
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("roadmap-tokens-updated", {
-        detail: { userId: "guest", tier, maxTokens }
-      }));
-    }
-    return;
-  }
-
-  try {
-    const supabase = createClient();
-
-    // 1. Update Auth user metadata
-    await supabase.auth.updateUser({
-      data: { subscription_tier: tier },
-    });
-
-    // 2. Update profiles table in Supabase
-    try {
-      await supabase
-        .from("profiles")
-        .update({ subscription_tier: tier, updated_at: new Date().toISOString() })
-        .eq("id", userId);
-    } catch {
-      // ignore if profiles table not present
-    }
-
-    // 3. Upsert token_budgets table in Supabase
-    try {
-      const { data: existing } = await supabase
-        .from("token_budgets")
-        .select("tokens_used_current_cycle")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      await supabase
-        .from("token_budgets")
-        .upsert({
-          user_id: userId,
-          max_tokens_monthly: maxTokens,
-          tokens_used_current_cycle: existing?.tokens_used_current_cycle || 0,
-          updated_at: new Date().toISOString(),
-        });
-    } catch (budgetErr) {
-      console.debug("updateUserSubscriptionData token_budgets notice:", budgetErr);
-    }
-
-    // 4. Dispatch update event
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("roadmap-tokens-updated", {
-        detail: { userId, tier, maxTokens }
-      }));
-    }
-  } catch (err) {
-    console.error("updateUserSubscriptionData error:", err);
-  }
+export interface UsageSummary {
+  used: number;
+  limit: number;
+  /** Null when the date on record has already passed */
+  resetsAt: Date | null;
+  paths: number;
+  topicsDone: number;
 }
 
-export async function getUserSubscriptionData(userId?: string) {
-  let tier = "Standard Institutional Tier";
-  let tokenLimit = 250000;
-  let tokensUsed = 34500;
-  let activeRoadmapsCount = 0;
-  let totalTopicsMastered = 0;
-  let agentBreakdown = {
-    agent1: 18400,
-    agent2: 9200,
-    agent3: 6900,
-  };
-  const now = new Date();
-  let resetDate = new Date(now.getFullYear(), now.getMonth() + 1, 1).toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
+/** Everything on the Usage page, straight from the database. Throws when it cannot be read. */
+export async function getUsageSummary(userId: string): Promise<UsageSummary> {
+  const supabase = createClient();
+  const [budget, roadmaps] = await Promise.all([
+    supabase
+      .from("token_budgets")
+      .select("tokens_used_current_cycle, max_tokens_monthly, cycle_resets_at")
+      .eq("user_id", userId)
+      .maybeSingle(),
+    supabase.from("roadmaps").select("id, roadmap_days(roadmap_topics(status))").eq("user_id", userId),
+  ]);
+  if (budget.error) throw budget.error;
+  if (roadmaps.error) throw roadmaps.error;
 
-  // Check client-side tier cache first for instant display
-  if (typeof window !== "undefined") {
-    const savedTier = localStorage.getItem("user_subscription_tier");
-    if (savedTier === "pro") {
-      tier = "Institutional Pro";
-      tokenLimit = 2500000;
-    }
-    const guestTokens = localStorage.getItem("roadmap_guest_tokens_used");
-    if (guestTokens) {
-      tokensUsed = parseInt(guestTokens, 10);
-    }
-  }
-
-  if (userId && userId !== "guest" && !userId.startsWith("guest-") && !userId.startsWith("local-")) {
-    try {
-      const supabase = createClient();
-
-      // 1. Fetch live user token budget directly from Supabase public.token_budgets table
-      const { data: budgetData, error: budgetError } = await supabase
-        .from("token_budgets")
-        .select("tokens_used_current_cycle, max_tokens_monthly, cycle_resets_at")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      if (budgetError) {
-        console.warn("token_budgets query notice:", budgetError);
-      }
-
-      // 2. Fetch user profile to verify institutional tier
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("subscription_tier")
-        .eq("id", userId)
-        .maybeSingle();
-
-      if (profile?.subscription_tier === "pro") {
-        tier = "Institutional Pro";
-        tokenLimit = 2500000;
-      }
-
-      // 3. Fetch agent execution audit logs to compute exact agent telemetry breakdown
-      const { data: agentLogs } = await supabase
-        .from("agent_execution_logs")
-        .select("agent_name, prompt_tokens, completion_tokens")
-        .eq("user_id", userId);
-
-      let sumLoggedTokens = 0;
-      let a1 = 0;
-      let a2 = 0;
-      let a3 = 0;
-
-      if (agentLogs && agentLogs.length > 0) {
-        agentLogs.forEach((l: any) => {
-          const total = (l.prompt_tokens || 0) + (l.completion_tokens || 0);
-          sumLoggedTokens += total;
-          const name = (l.agent_name || "").toLowerCase();
-          if (name.includes("agent 1") || name.includes("roadmap")) {
-            a1 += total;
-          } else if (name.includes("agent 2") || name.includes("topic") || name.includes("verifier")) {
-            a2 += total;
-          } else {
-            a3 += total;
-          }
-        });
-        agentBreakdown = {
-          agent1: a1,
-          agent2: a2,
-          agent3: a3,
-        };
-      }
-
-      // 4. Fetch user's active roadmaps and completed topics
-      const { data: roadmaps } = await supabase
-        .from("roadmaps")
-        .select("id, roadmap_days(id, roadmap_topics(id, status))")
-        .eq("user_id", userId);
-
-      if (roadmaps) {
-        activeRoadmapsCount = roadmaps.length;
-        let completed = 0;
-        roadmaps.forEach((r: any) => {
-          (r.roadmap_days || []).forEach((d: any) => {
-            (d.roadmap_topics || []).forEach((t: any) => {
-              if (t.status === "completed") completed++;
-            });
-          });
-        });
-        totalTopicsMastered = completed;
-      }
-
-      // 5. Authoritative tokensUsed from database
-      if (budgetData && typeof budgetData.tokens_used_current_cycle === "number") {
-        tokensUsed = budgetData.tokens_used_current_cycle;
-        if (budgetData.max_tokens_monthly) {
-          tokenLimit = budgetData.max_tokens_monthly;
-        }
-        if (budgetData.cycle_resets_at) {
-          resetDate = new Date(budgetData.cycle_resets_at).toLocaleDateString("en-US", {
-            month: "long",
-            day: "numeric",
-            year: "numeric",
-          });
-        }
-      } else if (sumLoggedTokens > 0) {
-        tokensUsed = sumLoggedTokens;
-        // Auto-initialize token_budgets row in database for this user
-        await supabase.from("token_budgets").upsert({
-          user_id: userId,
-          tokens_used_current_cycle: tokensUsed,
-          max_tokens_monthly: tokenLimit,
-          updated_at: new Date().toISOString(),
-        });
-      } else {
-        tokensUsed = 0;
-        // Auto-initialize token_budgets row with 0 if no record exists
-        await supabase.from("token_budgets").upsert({
-          user_id: userId,
-          tokens_used_current_cycle: 0,
-          max_tokens_monthly: tokenLimit,
-          updated_at: new Date().toISOString(),
-        });
-      }
-
-      // Ensure agent breakdown mirrors tokensUsed if no granular logs exist yet
-      if (sumLoggedTokens === 0 && tokensUsed > 0) {
-        agentBreakdown = {
-          agent1: Math.round(tokensUsed * 0.52),
-          agent2: Math.round(tokensUsed * 0.28),
-          agent3: Math.round(tokensUsed * 0.20),
-        };
-      }
-    } catch (err) {
-      console.debug("getUserSubscriptionData notice:", err);
-    }
-  }
+  const resetsAt = budget.data?.cycle_resets_at ? new Date(budget.data.cycle_resets_at) : null;
+  type Row = { roadmap_days?: Array<{ roadmap_topics?: Array<{ status: string }> }> };
+  const rows = (roadmaps.data ?? []) as Row[];
 
   return {
-    tier,
-    tokenLimit,
-    tokensUsed,
-    percent: Math.min(100, Math.round((tokensUsed / tokenLimit) * 100)),
-    resetDate,
-    activeRoadmapsCount,
-    totalTopicsMastered,
-    agentBreakdown,
+    used: budget.data?.tokens_used_current_cycle ?? 0,
+    limit: budget.data?.max_tokens_monthly ?? 250000,
+    resetsAt: resetsAt && resetsAt.getTime() > Date.now() ? resetsAt : null,
+    paths: rows.length,
+    topicsDone: rows
+      .flatMap((r) => r.roadmap_days ?? [])
+      .flatMap((d) => d.roadmap_topics ?? [])
+      .filter((t) => t.status === "completed").length,
   };
 }

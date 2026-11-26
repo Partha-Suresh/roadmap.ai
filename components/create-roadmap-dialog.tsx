@@ -107,7 +107,7 @@ export function CreateRoadmapDialog() {
       console.error("Creating the path failed:", err);
       const message = err instanceof Error ? err.message : "Something went wrong. Please try again.";
       const isQuota =
-        (err instanceof Error && err.name === "TokenQuotaExceededError") || /token budget exhausted|quota/i.test(message);
+        (err instanceof Error && err.name === "TokenQuotaExceededError") || /AI usage is used up|quota/i.test(message);
       if (isQuota) setOpen(false);
       showTelemetryToast({
         type: "error",

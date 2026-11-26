@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { generateJson } from "@/lib/gemini";
+import type { TokenUsage } from "@/lib/usage";
 import {
   DIMENSIONS,
   MOVES,
@@ -209,11 +210,12 @@ export async function POST(req: NextRequest) {
   });
 
   let turn: ModelTurn;
+  let usage: TokenUsage;
   try {
     const judging = action === "answer";
-    turn = await generateJson({ system: SYSTEM, user: userPrompt }, buildSchema(judging), (value) =>
+    ({ value: turn, usage } = await generateJson({ system: SYSTEM, user: userPrompt }, buildSchema(judging), (value) =>
       validateTurn(value, judging)
-    );
+    ));
   } catch (err) {
     console.warn("[/api/socratic] No model answered:", err instanceof Error ? err.message : err);
     return NextResponse.json(
@@ -247,6 +249,7 @@ export async function POST(req: NextRequest) {
     move: next.move,
     verdict,
     state: next,
+    usage,
     passed: verdict !== null && verdict !== "off_topic" && isMastered(next),
   });
 }

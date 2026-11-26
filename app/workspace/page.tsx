@@ -465,13 +465,13 @@ function WorkspaceContent() {
       if (
         err instanceof TokenQuotaExceededError ||
         err?.name === "TokenQuotaExceededError" ||
-        err?.message?.toLowerCase().includes("token budget exhausted") ||
+        err?.message?.toLowerCase().includes("ai usage is used up") ||
         err?.message?.toLowerCase().includes("quota")
       ) {
         showTelemetryToast({
           type: "error",
-          title: "ALLOCATION EXHAUSTED",
-          message: err.message || "Monthly reasoning token quota reached.",
+          title: "Monthly limit reached",
+          message: err.message || "There isn't enough AI usage left this month.",
         });
       }
       console.warn("Using offline fallback lesson:", err);
@@ -535,6 +535,9 @@ function WorkspaceContent() {
     (acc, d) => acc + (d.topics?.filter((t) => t.status === "completed").length || 0),
     0
   );
+  const selectedDay = roadmapDays.find((d) => d.id === selectedDayId);
+  const selectedTopic = selectedDay?.topics.find((t) => t.id === selectedTopicId);
+  const selectedLabel = selectedDay && selectedTopic ? `Day ${selectedDay.day_number}, topic ${selectedTopic.topic_number}` : "Lesson";
   const completionPercentage = totalTopics > 0 ? Math.round((completedTopics / totalTopics) * 100) : 0;
 
   return (
@@ -548,9 +551,7 @@ function WorkspaceContent() {
         {userRoadmaps.length > 1 && (
           <div className="mb-5 flex flex-wrap items-center justify-between gap-4 font-mono text-xs">
             <div className="flex items-center gap-2.5 relative" ref={trajectoryDropdownRef}>
-              <span className="text-muted-foreground uppercase tracking-wider text-[11px] font-semibold">
-                ACTIVE TRAJECTORY:
-              </span>
+              <span className="text-sm text-muted-foreground">Path</span>
 
               {/* Bespoke Trajectory Dropdown Trigger */}
               <button
@@ -562,7 +563,7 @@ function WorkspaceContent() {
               >
                 <Layers className="size-3.5 text-orange-500" />
                 <span className="font-semibold truncate max-w-[220px] sm:max-w-[320px]">
-                  {currentRoadmap?.title || "Select Trajectory"}
+                  {currentRoadmap?.title || "Choose a path"}
                 </span>
                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-600 dark:text-orange-400">
                   {currentRoadmap?.total_days || 7}d
@@ -616,24 +617,22 @@ function WorkspaceContent() {
           </div>
         )}
         {/* Metric Bar Card using Shadcn Card */}
-        <Card className="mb-6 p-5 idle-card flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <Card className="mb-8 p-6 idle-card flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 text-xs font-mono text-orange-600 dark:text-orange-400 uppercase tracking-wider font-semibold mb-1">
-              <span>Agent 1 & Agent 2 Curricula</span>
-              <span>•</span>
-              <span className="text-muted-foreground">{currentRoadmap?.total_days || 7} Days Intensive</span>
-              <span>•</span>
-              <span className="text-muted-foreground">{currentRoadmap?.daily_hours_commitment || 2} hrs/day</span>
-            </div>
-            <CardTitle className="text-xl sm:text-2xl font-bold tracking-[-0.03em]">
-              {currentRoadmap?.title || "Active Trajectory"}
+            <CardTitle className="text-xl sm:text-2xl font-bold tracking-[-0.02em] [word-spacing:0.1em]">
+              {currentRoadmap?.title || "Your path"}
             </CardTitle>
+            <p className="mt-1.5 text-sm text-muted-foreground">
+              {currentRoadmap?.total_days || 7} days, {currentRoadmap?.daily_hours_commitment || 2} hours a day
+            </p>
           </div>
 
           <div className="flex items-center gap-4">
             <div className="text-right hidden sm:block">
-              <div className="text-[11px] font-mono text-muted-foreground uppercase font-semibold">Curriculum Velocity</div>
-              <div className="text-sm font-bold text-foreground font-mono">{completionPercentage}% Completed</div>
+              <div className="text-sm font-semibold tabular-nums text-foreground">{completionPercentage}% done</div>
+              <div className="text-sm tabular-nums text-muted-foreground">
+                {completedTopics} of {totalTopics} topics
+              </div>
             </div>
             <div className="w-32 sm:w-44">
               <Progress
@@ -646,16 +645,12 @@ function WorkspaceContent() {
         </Card>
 
         {/* Split View: Left = Compact Architecture Sidebar (3 cols), Right = Ultra-Wide Masterclass Studio (9 cols) */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           {/* Left Column: Interactive Day Tree - Sticky alongside Masterclass below navbar */}
           <div className="lg:col-span-4 xl:col-span-3 2xl:col-span-3 lg:sticky lg:top-32 xl:top-36 space-y-3 self-start">
             <div className="flex items-center justify-between pb-2.5 border-b border-border">
-              <span className="text-[11px] font-semibold tracking-[0.18em] uppercase text-muted-foreground font-mono">
-                DAILY ARCHITECTURE
-              </span>
-              <span className="text-[11px] font-mono text-muted-foreground">
-                {roadmapDays.length} Days
-              </span>
+              <h2 className="text-base font-semibold">Days</h2>
+              <span className="text-sm tabular-nums text-muted-foreground">{roadmapDays.length}</span>
             </div>
 
             <RoadmapRail
@@ -675,9 +670,7 @@ function WorkspaceContent() {
                 {/* Header Tabs */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-border gap-4">
                   <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-semibold tracking-[0.18em] uppercase text-muted-foreground font-mono">
-                      AGENT 3: MASTERCLASS PEDAGOGY
-                    </span>
+                    <span className="text-sm text-muted-foreground">{selectedLabel}</span>
                   </div>
 
                   <div className="flex items-center gap-2.5 flex-wrap">
@@ -753,7 +746,7 @@ function WorkspaceContent() {
                   {isLoadingLesson ? (
                     <div className="py-24 text-center">
                       <Loader2 className="size-6 text-orange-500 animate-spin mx-auto mb-4" />
-                      <p className="text-xs font-mono text-muted-foreground">Agent 3 synthesizing masterclass module...</p>
+                      <p className="text-sm text-muted-foreground">Writing your lesson. The first time can take a minute.</p>
                     </div>
                   ) : currentLesson ? (
                     <div>
@@ -885,7 +878,7 @@ function WorkspaceContent() {
                     </div>
                   ) : (
                     <div className="py-24 text-center text-muted-foreground font-mono text-xs">
-                      Select any topic from the daily curriculum tree to begin study.
+                      Choose a topic to start.
                     </div>
                   )}
                 </div>
@@ -903,7 +896,7 @@ export default function WorkspacePage() {
     <Suspense
       fallback={
         <div className="min-h-screen bg-background flex items-center justify-center text-muted-foreground font-mono text-xs">
-          Loading learning studio...
+          Loading your workspace
         </div>
       }
     >

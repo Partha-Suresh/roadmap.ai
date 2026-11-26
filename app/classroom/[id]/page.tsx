@@ -24,6 +24,7 @@ import {
   type SocraticState,
   type Verdict,
 } from "@/lib/socratic";
+import { parseUsage } from "@/lib/usage";
 import { cn } from "@/lib/utils";
 import { showTelemetryToast } from "@/components/ui/telemetry-toast";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -71,7 +72,8 @@ const VERDICT_VARIANT: Record<Verdict, "emerald" | "amber" | "rose" | "secondary
 const CLAIM_DOT = { solid: "bg-emerald-500", shaky: "bg-amber-500", wrong: "bg-rose-500" } as const;
 const CLAIM_LABEL = { solid: "Survived a test", shaky: "Not proven yet", wrong: "Contradicted" } as const;
 
-const TOKENS: Record<Action, number> = { start: 450, answer: 650, switch: 450, nudge: 250 };
+/** Rough size of each request, only to check there is room for it */
+const TOKENS: Record<Action, number> = { start: 1800, answer: 2800, switch: 2500, nudge: 2200 };
 
 function ClassroomContent() {
   const params = useParams();
@@ -147,13 +149,13 @@ function ClassroomContent() {
           setMastered(true);
           await updateTopicStatusInSupabase(topicId, "completed");
         }
-        await consumeTokensInDb(ctx.userId, TOKENS[action], "Agent 3: Socratic Examiner");
+        await consumeTokensInDb(ctx.userId, parseUsage(data.usage), "Agent 3: Socratic Examiner");
         return true;
       } catch (err) {
         if (controller.signal.aborted) return false;
         const message = err instanceof Error ? err.message : "The Socratic AI did not respond.";
         if (err instanceof TokenQuotaExceededError) {
-          showTelemetryToast({ type: "error", title: "ALLOCATION EXHAUSTED", message });
+          showTelemetryToast({ type: "error", title: "Monthly limit reached", message });
         }
         setError({ message, action, move: extra.move });
         return false;
@@ -270,19 +272,14 @@ function ClassroomContent() {
       <div className="fixed top-0 inset-x-0 h-32 sm:h-36 pointer-events-none z-40 bg-gradient-to-b from-background via-background/70 to-transparent backdrop-blur-xl [mask-image:linear-gradient(to_bottom,black_0%,black_35%,transparent_100%)] [-webkit-mask-image:linear-gradient(to_bottom,black_0%,black_35%,transparent_100%)]" />
 
       <main className="pt-32 sm:pt-36 lg:pt-40 pb-16 max-w-[1420px] 2xl:max-w-[1460px] w-full mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-        <Card className="mb-6 p-5 idle-card flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <Card className="mb-8 p-6 idle-card flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-x-2 text-xs font-mono text-orange-600 dark:text-orange-400 uppercase tracking-wider font-semibold mb-1">
-              <span>Agent 3 Socratic AI</span>
-              {topic && (
-                <span className="text-muted-foreground">
-                  • Day {topic.day} • {topic.minutes} min
-                </span>
-              )}
-            </div>
-            <CardTitle className="text-xl sm:text-2xl font-bold tracking-[-0.03em]">
-              {topic?.title ?? "Loading topic..."}
+            <CardTitle className="text-xl sm:text-2xl font-bold tracking-[-0.02em] [word-spacing:0.1em]">
+              {topic?.title ?? "Loading topic"}
             </CardTitle>
+            <p className="mt-1.5 text-sm text-muted-foreground">
+              Socratic AI{topic && `, day ${topic.day}, ${topic.minutes} min`}
+            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-4">
@@ -293,8 +290,7 @@ function ClassroomContent() {
               </Badge>
             )}
             <div className="text-right hidden sm:block">
-              <div className="text-[11px] font-mono text-muted-foreground uppercase font-semibold">Mastery</div>
-              <div className="text-sm font-bold font-mono tabular-nums">{overall}%</div>
+              <div className="text-sm font-semibold tabular-nums">{overall}% mastered</div>
             </div>
             <Progress
               value={overall}
@@ -307,11 +303,11 @@ function ClassroomContent() {
           </div>
         </Card>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           {/* What the examiner thinks you believe */}
           <aside className="order-2 lg:order-1 lg:col-span-4 xl:col-span-3 lg:sticky lg:top-36 space-y-6">
             <section>
-              <h2 className="pb-2.5 border-b border-border text-[11px] font-semibold tracking-[0.18em] uppercase text-muted-foreground font-mono!">
+              <h2 className="pb-2.5 border-b border-border text-base font-semibold font-sans! tracking-normal!">
                 Understanding
               </h2>
               <dl className="mt-3 space-y-3">
@@ -344,7 +340,7 @@ function ClassroomContent() {
             </section>
 
             <section>
-              <h2 className="pb-2.5 border-b border-border text-[11px] font-semibold tracking-[0.18em] uppercase text-muted-foreground font-mono!">
+              <h2 className="pb-2.5 border-b border-border text-base font-semibold font-sans! tracking-normal!">
                 Your beliefs
               </h2>
               {state.claims.length === 0 ? (
@@ -371,7 +367,7 @@ function ClassroomContent() {
 
             {gap !== null && (
               <section>
-                <h2 className="pb-2.5 border-b border-border text-[11px] font-semibold tracking-[0.18em] uppercase text-muted-foreground font-mono!">
+                <h2 className="pb-2.5 border-b border-border text-base font-semibold font-sans! tracking-normal!">
                   Confidence check
                 </h2>
                 <p className="mt-3 text-xs leading-relaxed">
@@ -388,8 +384,8 @@ function ClassroomContent() {
           {/* The session */}
           <Card className="idle-card order-1 lg:order-2 lg:col-span-8 xl:col-span-9 flex h-[calc(100svh-18.5rem)] min-h-[540px] flex-col overflow-hidden">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3">
-              <span className="text-[11px] font-semibold tracking-[0.18em] uppercase text-muted-foreground font-mono">
-                {lastMove ? `Current challenge: ${MOVES[lastMove].label}` : "Preparing a challenge"}
+              <span className="text-sm text-muted-foreground">
+                {lastMove ? `Challenge: ${MOVES[lastMove].label}` : "Preparing a challenge"}
               </span>
               <Button variant="ghost" size="sm" onClick={restart} disabled={!ctx || busy !== null || !started} className="gap-1.5">
                 <RotateCcw className="size-3.5" />

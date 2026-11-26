@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { readGeminiUsage } from "@/lib/usage";
 import { synthesizeResearchedLesson } from "@/lib/knowledge-engine";
 
 export const maxDuration = 60;
@@ -327,7 +328,7 @@ In JSON string values, avoid unescaped internal double quotes (use single quotes
         for (const model of uniqueModels) {
           try {
             const geminiRes = await fetch(
-              `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${googleApiKey}`,
+              `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
               {
                 method: "POST",
                 headers: {
@@ -358,6 +359,7 @@ In JSON string values, avoid unescaped internal double quotes (use single quotes
                     practical_examples: parsed.practical_examples || [],
                     citations: parsed.citations,
                     recommended_courses: parsed.recommended_courses,
+                    usage: readGeminiUsage(geminiData),
                   });
                 }
               }
