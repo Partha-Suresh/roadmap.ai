@@ -32,16 +32,19 @@ export function Navbar({
   const [internalUser, setInternalUser] = useState<any>(propsUser ?? null);
   const [overDarkHero, setOverDarkHero] = useState(false);
 
-  // The home hero is dark in both themes. While the navigation sits on it, use the
+  // The home hero and agents band are dark in both themes. While the navigation sits on it, use the
   // dark-theme styling so the boxes contrast with what is behind them.
   useEffect(() => {
     if (pathname !== "/") return;
     const update = () => {
-      const hero = document.getElementById("cockpit");
-      if (!hero) return;
-      // The picture fades out below the hero; switch partway through the fade
-      const fade = hero.nextElementSibling?.getBoundingClientRect().height ?? 0;
-      setOverDarkHero(hero.getBoundingClientRect().bottom + fade * 0.35 > 60);
+      // Any band marked data-nav-dark (the opening map, the agents band) that sits under the bar
+      const bands = document.querySelectorAll<HTMLElement>("[data-nav-dark]");
+      setOverDarkHero(
+        Array.from(bands).some((el) => {
+          const r = el.getBoundingClientRect();
+          return r.top <= 40 && r.bottom > 60;
+        })
+      );
     };
     update();
     window.addEventListener("scroll", update, { passive: true });
